@@ -9,12 +9,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 test("agent session dry-run resolves a plan without external model configuration", () => {
   const result = spawnSync(process.execPath, [
     "scripts/image-scraper.mjs", "start", "--preset", "generic-lightbox-gallery",
-    "--url", "https://example.com/gallery", "--count", "2", "--dry-run"
+    "--url", "https://example.com/gallery", "--count", "2",
+    "--collection", "reference set", "--target-label", "example-gallery", "--report-language", "es", "--dry-run"
   ], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.dryRun, true);
   assert.equal(output.plan.count, 2);
   assert.equal(output.plan.reasoningEngine, "host-agent");
+  assert.equal(output.plan.collectionName, "reference set");
+  assert.equal(output.plan.targetLabel, "example-gallery");
+  assert.equal(output.plan.platform, "web");
+  assert.equal(output.plan.reportLanguage, "es");
   assert.equal("vision" in output.plan, false);
 });

@@ -1,6 +1,6 @@
 interface:
   display_name: "Windows Visual Image Scraper"
-  short_description: "Scrape images through visible Windows browser UI"
-  default_prompt: "Use $windows-visual-image-scraper to capture or extract the requested images through my visible Edge session."
+  short_description: "Collect social images and build visual reports"
+  default_prompt: "Use $windows-visual-image-scraper to collect images from these Facebook or Instagram profiles and deliver a structured folder with a Markdown report."
 policy:
   allow_implicit_invocation: true

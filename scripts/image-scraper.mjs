@@ -12,7 +12,9 @@ import {
 } from "./lib/args.mjs";
 import {
   actAgentSession,
+  deriveTargetLabel,
   finishAgentSession,
+  inferPlatform,
   parseCropBox,
   parseRatioPair,
   rejectAgentFrame,
@@ -21,6 +23,7 @@ import {
   startAgentSession,
   statusAgentSession,
 } from "./lib/agent-session.mjs";
+import { generateReport } from "./lib/report.mjs";
 import { capturePage } from "./lib/runner.mjs";
 import { helperPath, windowsBrowser } from "./lib/windows-bridge.mjs";
 import { listPresets, loadWorkflow, validateWorkflow } from "./lib/workflow-schema.mjs";
@@ -35,13 +38,14 @@ Commands:
   list-presets
   validate-workflow --all | --workflow PATH
   capture-page --url URL [--shots N] [--dry-run | --confirm-live-ui]
-  start (--preset NAME | --workflow PATH) --url URL [--count N] [--dry-run | --confirm-live-ui]
+  start (--preset NAME | --workflow PATH) --url URL [--count N] [--collection NAME] [--target-label NAME] [--report-language en|es] [--dry-run | --confirm-live-ui]
   shot --session PATH [--context STAGE_ID|collection] [--label TEXT]
   act --session PATH --context STAGE_ID|collection (--click X,Y | --key KEY | --wait-ms N | --done)
-  save --session PATH --input PNG (--crop-box L,T,R,B | --heuristic | --full-window)
+  save --session PATH --input PNG (--crop-box L,T,R,B | --heuristic | --full-window) --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT
   reject --session PATH --input PNG --reason TEXT [--media-type TEXT]
   status --session PATH
-  finish --session PATH [--status complete|partial|failed] [--reason TEXT]
+  finish --session PATH [--status complete|partial|failed] [--summary TEXT] [--reason TEXT]
+  report --root PATH [--title TEXT] [--language en|es]
 
 Use --dry-run before any live UI run. See references/cli.md for all options.`;
 
@@ -116,12 +120,20 @@ async function startCommand(options) {
   const loaded = await loadWorkflow({ preset, workflowPath });
   const url = assertHttpUrl(requireOption(options, "url"));
   const count = readInteger(options.count, loaded.workflow.collection.defaultCount, { min: 1, max: 100 });
+  const collectionName = typeof options.collection === "string" ? options.collection.trim() : "social-image-collection";
+  const targetLabel = typeof options["target-label"] === "string" ? options["target-label"].trim() : deriveTargetLabel(url);
+  const platform = typeof options.platform === "string" ? options.platform.trim().toLowerCase() : inferPlatform(url);
+  const reportLanguage = typeof options["report-language"] === "string" ? options["report-language"].trim() : "en";
   const plan = {
     command: "start",
     workflow: loaded.workflow.name,
     workflowPath: loaded.path,
     url,
     count: Math.min(count, loaded.workflow.collection.maxCount),
+    collectionName,
+    targetLabel,
+    platform,
+    reportLanguage,
     outputDir: resolveOutputDir(options),
     options: runtimeOptions(options, loaded.workflow),
     reasoningEngine: "host-agent",
@@ -181,6 +193,13 @@ async function saveCommand(options) {
     inputPath: requireOption(options, "input"),
     method: choices[0],
     cropBox: choices[0] === "agent" ? parseCropBox(options["crop-box"]) : undefined,
+    metadata: {
+      name: requireOption(options, "name"),
+      description: requireOption(options, "description"),
+      whatsappRating: requireOption(options, "whatsapp-rating"),
+      whatsappReason: requireOption(options, "whatsapp-reason"),
+      tags: typeof options.tags === "string" ? options.tags.split(",") : [],
+    },
   }));
 }
 
@@ -199,7 +218,15 @@ async function finishCommand(options) {
     sessionValue: sessionValue(options),
     status: typeof options.status === "string" ? options.status : "complete",
     reason: typeof options.reason === "string" ? options.reason : undefined,
+    summary: typeof options.summary === "string" ? options.summary : undefined,
   }));
+}
+
+async function reportCommand(options) {
+  const root = requireOption(options, "root");
+  const title = typeof options.title === "string" ? options.title : undefined;
+  const language = typeof options.language === "string" ? options.language : undefined;
+  print(await generateReport(root, { title, language }));
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -216,6 +243,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === "reject") return rejectCommand(options);
   if (command === "status") return print(await statusAgentSession(sessionValue(options)));
   if (command === "finish") return finishCommand(options);
+  if (command === "report") return reportCommand(options);
   throw new Error(`Unknown command: ${command}\n\n${HELP}`);
 }
 

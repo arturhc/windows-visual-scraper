@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRunArtifacts, sha256File, slugify } from "./artifacts.mjs";
 import { closeBrowserSession, openBrowserSession, sleep } from "./browser-session.mjs";
+import { generateReport } from "./report.mjs";
 import { SAFE_KEYS } from "./workflow-schema.mjs";
 import { windowsBrowser } from "./windows-bridge.mjs";
 
@@ -9,6 +10,8 @@ const SESSION_FILE = "session.json";
 const MAX_ACTIONS = 500;
 const MAX_SHOTS = 500;
 const FINAL_STATUSES = new Set(["complete", "partial", "failed"]);
+const PLATFORMS = new Set(["facebook", "instagram", "web"]);
+const GENERIC_FILE_NAMES = new Set(["image", "photo", "picture", "capture", "screenshot", "imagen", "foto", "captura"]);
 const portable = (root, target) => path.relative(root, target).replaceAll("\\", "/");
 
 function isWithin(root, target) {
@@ -78,6 +81,50 @@ export function parseCropBox(value) {
     throw new Error("--crop-box is too small; it must retain at least 1% of the frame.");
   }
   return { leftRatio, topRatio, rightRatio, bottomRatio };
+}
+
+export function inferPlatform(urlValue) {
+  const host = new URL(urlValue).hostname.toLowerCase();
+  if (host === "facebook.com" || host.endsWith(".facebook.com") || host === "fb.com" || host.endsWith(".fb.com")) return "facebook";
+  if (host === "instagram.com" || host.endsWith(".instagram.com")) return "instagram";
+  return "web";
+}
+
+export function deriveTargetLabel(urlValue) {
+  const url = new URL(urlValue);
+  let pathname = url.pathname.split("/").filter(Boolean)[0] || url.hostname.replace(/^www\./, "");
+  try { pathname = decodeURIComponent(pathname); } catch {}
+  return pathname.slice(0, 120);
+}
+
+export function normalizeSavedImageMetadata(metadata = {}) {
+  const displayName = String(metadata.name || "").trim();
+  const fileStem = slugify(displayName, "");
+  if (!fileStem || GENERIC_FILE_NAMES.has(fileStem) || /^(?:image|photo|picture|capture|screenshot|imagen|foto|captura)-?\d*$/i.test(fileStem)) {
+    throw new Error("--name must describe the visible image; generic names such as image, photo, or screenshot are not allowed.");
+  }
+  const description = String(metadata.description || "").trim();
+  if (description.length < 8 || description.length > 500) {
+    throw new Error("--description must contain 8 through 500 characters describing visible content.");
+  }
+  const rating = Number(metadata.whatsappRating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error("--whatsapp-rating must be an integer from 1 through 5.");
+  }
+  const reason = String(metadata.whatsappReason || "").trim();
+  if (reason.length < 5 || reason.length > 300) {
+    throw new Error("--whatsapp-reason must contain 5 through 300 characters.");
+  }
+  const tags = Array.isArray(metadata.tags)
+    ? metadata.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 12)
+    : [];
+  return {
+    displayName,
+    fileStem,
+    description,
+    tags,
+    whatsapp: { rating, recommended: rating >= 4, reason },
+  };
 }
 
 function contextDefinition(session, context) {
@@ -171,14 +218,24 @@ function agentInstructions(session, context) {
   return instructions;
 }
 
-export async function startAgentSession({ workflow, workflowPath, url, count, outputDir, options }) {
+export async function startAgentSession({ workflow, workflowPath, url, count, outputDir, options, collectionName, targetLabel, platform, reportLanguage }) {
   const requestedCount = Math.min(count ?? workflow.collection.defaultCount, workflow.collection.maxCount);
-  const artifacts = await createRunArtifacts(outputDir, workflow.name, {
+  const resolvedCollectionName = String(collectionName || "image-collection").trim().slice(0, 120) || "image-collection";
+  const resolvedTargetLabel = String(targetLabel || deriveTargetLabel(url)).trim().slice(0, 120) || deriveTargetLabel(url);
+  const resolvedPlatform = String(platform || inferPlatform(url)).toLowerCase();
+  const resolvedReportLanguage = String(reportLanguage || "en").toLowerCase().startsWith("es") ? "es" : "en";
+  if (!PLATFORMS.has(resolvedPlatform)) throw new Error(`Unsupported platform: ${resolvedPlatform}.`);
+  const collectionRoot = path.join(path.resolve(outputDir), slugify(resolvedCollectionName, "image-collection"));
+  const artifacts = await createRunArtifacts(collectionRoot, `${resolvedPlatform}-${resolvedTargetLabel}`, {
     kind: "agent-native",
     workflow: workflow.name,
     workflowPath,
     url,
     requestedCount,
+    collectionName: resolvedCollectionName,
+    targetLabel: resolvedTargetLabel,
+    platform: resolvedPlatform,
+    reportLanguage: resolvedReportLanguage,
   });
   const sessionPath = path.join(artifacts.directories.root, SESSION_FILE);
   let browserSession;
@@ -199,6 +256,11 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       workflowPath,
       workflow,
       requestedCount,
+      collectionName: resolvedCollectionName,
+      collectionRoot,
+      targetLabel: resolvedTargetLabel,
+      platform: resolvedPlatform,
+      reportLanguage: resolvedReportLanguage,
       runRoot: artifacts.directories.root,
       directories: artifacts.directories,
       manifestPath: artifacts.manifestPath,
@@ -218,6 +280,7 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       status: session.status,
       sessionPath,
       manifestPath: session.manifestPath,
+      collectionRoot,
       screenshotPath,
       instructions: agentInstructions(session),
     };
@@ -286,8 +349,9 @@ async function writeManifest(session, manifest) {
   await writeJsonAtomic(session.manifestPath, manifest);
 }
 
-export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox }) {
+export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox, metadata }) {
   const session = await loadAgentSession(sessionValue, { active: true });
+  const normalizedMetadata = normalizeSavedImageMetadata(metadata);
   const sourcePath = await fs.realpath(path.resolve(inputPath));
   const realRunRoot = await fs.realpath(session.runRoot);
   assertWithin(realRunRoot, sourcePath, "Input image");
@@ -328,15 +392,42 @@ export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox 
   }
 
   const index = manifest.items.length + 1;
-  const finalPath = path.join(session.directories.media, `image-${String(index).padStart(3, "0")}.png`);
+  const finalPath = path.join(session.directories.media, `${String(index).padStart(3, "0")}-${normalizedMetadata.fileStem}.png`);
   await fs.rename(candidatePath, finalPath);
-  manifest.items.push({ index, path: portable(session.runRoot, finalPath), sha256: hash, cropSource: method });
+  manifest.items.push({
+    index,
+    path: portable(session.runRoot, finalPath),
+    sha256: hash,
+    cropSource: method,
+    name: normalizedMetadata.fileStem,
+    displayName: normalizedMetadata.displayName,
+    description: normalizedMetadata.description,
+    tags: normalizedMetadata.tags,
+    whatsapp: normalizedMetadata.whatsapp,
+  });
   await writeManifest(session, manifest);
   session.counters.saves += 1;
   session.contextActions.collection = 0;
-  await appendTrace(session, "frame-saved", { index, path: finalPath, sha256: hash, cropSource: method });
+  await appendTrace(session, "frame-saved", {
+    index,
+    path: finalPath,
+    sha256: hash,
+    cropSource: method,
+    name: normalizedMetadata.fileStem,
+    whatsappRating: normalizedMetadata.whatsapp.rating,
+  });
   await saveSession(session);
-  return { status: "saved", sessionPath: session.sessionPath, manifestPath: session.manifestPath, imagePath: finalPath, sha256: hash, captured: manifest.items.length, requested: session.requestedCount };
+  return {
+    status: "saved",
+    sessionPath: session.sessionPath,
+    manifestPath: session.manifestPath,
+    imagePath: finalPath,
+    displayName: normalizedMetadata.displayName,
+    whatsapp: normalizedMetadata.whatsapp,
+    sha256: hash,
+    captured: manifest.items.length,
+    requested: session.requestedCount,
+  };
 }
 
 export async function rejectAgentFrame({ sessionValue, inputPath, reason, mediaType }) {
@@ -365,6 +456,8 @@ export async function statusAgentSession(sessionValue) {
     status: session.status,
     sessionPath: session.sessionPath,
     manifestPath: session.manifestPath,
+    collectionRoot: session.collectionRoot,
+    reportPath: session.reportPath,
     lastScreenshotPath: session.lastScreenshotPath,
     captured: manifest.items.length,
     rejected: manifest.rejectedFrames.length,
@@ -373,14 +466,20 @@ export async function statusAgentSession(sessionValue) {
   };
 }
 
-export async function finishAgentSession({ sessionValue, status, reason }) {
+export async function finishAgentSession({ sessionValue, status, reason, summary }) {
   const session = await loadAgentSession(sessionValue);
-  if (session.status !== "active") return statusAgentSession(session.sessionPath);
+  if (session.status !== "active") {
+    const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage });
+    session.reportPath = report.reportPath;
+    await saveSession(session);
+    return statusAgentSession(session.sessionPath);
+  }
   if (!FINAL_STATUSES.has(status)) throw new Error(`Finish status must be one of: ${[...FINAL_STATUSES].join(", ")}.`);
   const manifest = await readManifest(session);
   session.status = status;
   session.finishedAt = new Date().toISOString();
   if (reason) session.reason = reason;
+  if (summary) session.summary = String(summary).trim().slice(0, 1000);
   await appendTrace(session, "session-finished", { status, reason });
   await closeBrowserSession(
     { window: session.window, fullscreen: session.fullscreen },
@@ -390,7 +489,10 @@ export async function finishAgentSession({ sessionValue, status, reason }) {
   manifest.status = status;
   manifest.finishedAt = session.finishedAt;
   if (reason) manifest.reason = reason;
+  if (session.summary) manifest.summary = session.summary;
   await writeManifest(session, manifest);
+  const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage });
+  session.reportPath = report.reportPath;
   await saveSession(session);
-  return statusAgentSession(session.sessionPath);
+  return { ...(await statusAgentSession(session.sessionPath)), report };
 }

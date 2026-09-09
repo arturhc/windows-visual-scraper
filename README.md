@@ -2,38 +2,57 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A reusable Codex skill for extracting visible images through a real Microsoft Edge window on Windows. Codex—or another code agent that can inspect local images—provides the visual intelligence. The bundled Node.js and PowerShell scripts only expose bounded browser controls, screenshots, crops, deduplication, and audit artifacts.
+A reusable Codex skill for end-to-end image collection from Facebook profiles, Instagram profiles, and browser galleries through a real Microsoft Edge window on Windows.
 
-**No OpenAI SDK, separate API key, or model configuration is required.** The skill uses the model already running in Codex. Its scripts do not send screenshots to an AI API.
+The intended user experience is high level:
 
-It is intended for cases where authentication, client-side rendering, or a visual-only interface makes direct downloads impractical. It does not use Playwright, Selenium, DOM selectors, cookie export, or browser-profile copying.
+```text
+Use $windows-visual-image-scraper. Here are a Facebook profile and an Instagram
+profile. Collect useful images and leave everything in a structured folder.
+```
+
+Codex handles target resolution, visible navigation, screenshot inspection, clicking, cropping, descriptive filenames, curation, WhatsApp recommendations, cleanup, and the final Markdown report. The user does not need to provide coordinates or operate the browser.
+
+**No OpenAI SDK, separate API key, or model configuration is required.** The skill uses the visual intelligence of the Codex/code-agent session that is already running. Its scripts do not send screenshots to an AI API.
+
+It does not use Playwright, Selenium, DOM selectors, cookie export, or browser-profile copying.
 
 > [!IMPORTANT]
-> This project controls a visible desktop. It can take focus and briefly move the pointer. Run it inside a dedicated Windows VM when the main desktop must remain usable. A VM isolates the desktop; it does not hide automation or prevent website rate limits, challenges, or account enforcement.
+> This project controls a visible Windows desktop. It can take focus and briefly move the pointer. Use a dedicated Windows VM when the main desktop must remain usable. A VM isolates the desktop; it does not hide automation or prevent website challenges, rate limits, or account enforcement.
 
-## How it works
+## Responsibility split
 
 ```mermaid
 flowchart LR
-    A[Codex / code agent] -->|start| B[Windows control CLI]
+    U[High-level user request] --> A[Codex / code agent]
+    A -->|resolve target + start| B[Constrained Windows CLI]
     B --> C[Visible Edge window]
     C --> D[Local PNG screenshot]
     D -->|inspect pixels| A
-    A -->|one validated action| B
-    A -->|save / reject| B
-    B --> E[Media + manifest + trace]
+    A -->|one click/key/wait| B
+    A -->|crop + descriptive metadata| B
+    B --> E[Structured images + manifests]
+    E --> F[Markdown gallery + WhatsApp shortlist]
 ```
 
-The agent and scripts have deliberately separate jobs:
+Codex is the operator and editor:
 
-- The agent inspects each returned PNG and decides what is visibly true.
-- Workflow JSON constrains allowed actions, keys, step counts, crop policy, and acceptance criteria.
-- The CLI executes one action at a time against the Edge window saved in `session.json`.
-- PowerShell uses native Windows screenshot and input APIs.
-- Accepted images are cropped locally and deduplicated with SHA-256.
-- `manifest.json` and `run.ndjson` preserve an auditable record.
+- Resolves profile names or handles to the correct URL when possible.
+- Inspects every screenshot and decides where to click.
+- Distinguishes still images from videos, grids, placeholders, and irrelevant UI.
+- Chooses the exact crop and verifies ambiguous results.
+- Writes a factual visible-content description.
+- Rates how useful each image may be in a WhatsApp conversation.
+- Completes every source and produces the final report.
 
-There is no hidden autonomous model loop inside the CLI. This is what makes the repository usable directly by Codex and other image-capable coding agents without separate credentials.
+The scripts are the deterministic control layer:
+
+- Open a separate Edge window using a selected profile.
+- Capture the visible window through native Windows APIs.
+- Execute one workflow-constrained action at a time.
+- Crop locally and reject exact duplicates with SHA-256.
+- Store sessions, manifests, screenshots, traces, and accepted media.
+- Generate a consolidated `REPORT.md` with Markdown tables and image previews.
 
 ## Requirements
 
@@ -41,13 +60,11 @@ There is no hidden autonomous model loop inside the CLI. This is what makes the 
 - Microsoft Edge.
 - Node.js 20 or newer.
 - PowerShell 5.1 or newer.
-- Codex or another code agent capable of opening local PNG screenshots.
+- Codex or another code agent capable of opening local PNG images.
 
-The repository currently has no npm runtime dependencies.
+The repository has no npm runtime dependencies.
 
-## Install as a Codex skill
-
-Codex discovers personal skills under `.agents/skills` in the user's profile:
+## Install as a Codex user skill
 
 ```powershell
 $skillDirectory = Join-Path $env:USERPROFILE ".agents\skills\windows-visual-image-scraper"
@@ -56,169 +73,183 @@ npm ci --prefix $skillDirectory
 node "$skillDirectory\scripts\image-scraper.mjs" doctor
 ```
 
-Restart Codex if the skill does not appear immediately. Then invoke it explicitly, for example:
+Codex automatically discovers user skills in `$HOME/.agents/skills`. Restart Codex if the skill does not appear immediately. It can also be installed from this repository with `$skill-installer`.
+
+## What the user can ask
+
+Examples that should trigger the complete workflow:
 
 ```text
-$windows-visual-image-scraper capture five still images from this gallery URL
+$windows-visual-image-scraper revisa este Instagram, guarda cinco fotos buenas y hazme un reporte.
 ```
 
-The skill can also be installed from this repository with Codex's `$skill-installer`.
+```text
+Busca el Facebook de Example Studio y extrae imágenes útiles para preparar una conversación.
+```
 
-## Quick start for agents
+```text
+Aquí tienes Facebook e Instagram. Saca imágenes de ambos, ponles nombres descriptivos
+y dime cuáles usarías en WhatsApp.
+```
 
-First resolve and validate the plan without touching the desktop:
+The skill asks for clarification only when the target account is materially ambiguous or manual authentication/security intervention is required.
+
+## Agent-native session protocol
+
+Users normally do not run these commands; Codex invokes them as part of the skill.
+
+Preflight and start one target:
 
 ```powershell
 node scripts/image-scraper.mjs start `
-  --preset generic-lightbox-gallery `
-  --url "https://example.com/gallery" `
-  --count 3 `
+  --preset instagram-photo-posts `
+  --url "https://www.instagram.com/example/" `
+  --count 5 `
+  --output ".\social-collections" `
+  --collection "campaign-references" `
+  --target-label "example" `
+  --platform instagram `
+  --report-language es `
   --dry-run
-```
 
-Start the visible session only after the user authorizes desktop control:
-
-```powershell
 node scripts/image-scraper.mjs start `
-  --preset generic-lightbox-gallery `
-  --url "https://example.com/gallery" `
-  --count 3 `
-  --output ".\captures" `
+  --preset instagram-photo-posts `
+  --url "https://www.instagram.com/example/" `
+  --count 5 `
+  --output ".\social-collections" `
+  --collection "campaign-references" `
+  --target-label "example" `
+  --platform instagram `
+  --report-language es `
   --pause-for-login `
   --confirm-live-ui
 ```
 
-`start` returns JSON containing `sessionPath`, `screenshotPath`, and instructions for the first stage. The agent must inspect that PNG, then issue one action:
+`start` returns `collectionRoot`, `sessionPath`, `screenshotPath`, and stage instructions. Codex opens the PNG, then sends one bounded action:
 
 ```powershell
 node scripts/image-scraper.mjs act `
-  --session "C:\captures\...\session.json" `
-  --context open-first-image `
-  --click "0.25,0.55"
+  --session "C:\path\to\session.json" `
+  --context open-first-post `
+  --click "0.20,0.74"
 ```
 
-Every `act` returns the next screenshot. When the stage is visibly complete:
-
-```powershell
-node scripts/image-scraper.mjs act `
-  --session "C:\captures\...\session.json" `
-  --context open-first-image `
-  --done
-```
-
-Capture and evaluate the collection frame:
-
-```powershell
-node scripts/image-scraper.mjs shot `
-  --session "C:\captures\...\session.json" `
-  --context collection
-```
-
-After inspecting the PNG, save a precisely selected crop or reject it:
+Every action returns a new screenshot. After reaching the collection viewer, Codex saves accepted images with required editorial metadata:
 
 ```powershell
 node scripts/image-scraper.mjs save `
-  --session "C:\captures\...\session.json" `
-  --input "C:\captures\...\screenshots\004-collection.png" `
-  --crop-box "0.05,0.08,0.74,0.95"
+  --session "C:\path\to\session.json" `
+  --input "C:\path\to\screenshots\004-collection.png" `
+  --crop-box "0.05,0.08,0.74,0.95" `
+  --name "sunset toast on beach" `
+  --description "Three people raise glasses in silhouette against an orange beach sunset." `
+  --tags "sunset,beach,toast" `
+  --whatsapp-rating 5 `
+  --whatsapp-reason "Warm, expressive, and immediately readable on a phone."
+```
 
+The resulting file is named like `001-sunset-toast-on-beach.png`. Generic filenames are rejected.
+
+When a frame is unsuitable:
+
+```powershell
 node scripts/image-scraper.mjs reject `
-  --session "C:\captures\...\session.json" `
-  --input "C:\captures\...\screenshots\004-collection.png" `
-  --reason "The visible media is a video" `
+  --session "C:\path\to\session.json" `
+  --input "C:\path\to\frame.png" `
+  --reason "The principal media is a video" `
   --media-type video
 ```
 
-Advance according to the returned workflow instructions, then inspect the new PNG:
-
-```powershell
-node scripts/image-scraper.mjs act `
-  --session "C:\captures\...\session.json" `
-  --context collection `
-  --key RIGHT
-```
-
-Always finish the session so fullscreen and the created window are cleaned up:
+Finish every source and regenerate the consolidated report:
 
 ```powershell
 node scripts/image-scraper.mjs finish `
-  --session "C:\captures\...\session.json" `
-  --status complete
+  --session "C:\path\to\session.json" `
+  --status complete `
+  --summary "Captured five distinct still images from the visible post viewer."
+
+node scripts/image-scraper.mjs report `
+  --root "C:\path\to\campaign-references" `
+  --title "Referencias de campaña" `
+  --language es
 ```
 
-Use `partial` if some images were saved but the requested count was not reached, and `failed` when none were usable.
+## Output structure
 
-## Capture page viewports
+All targets from one request share a collection folder:
 
-For deterministic screenshots that do not require agent decisions:
-
-```powershell
-node scripts/image-scraper.mjs capture-page `
-  --url "https://example.com" `
-  --shots 3 `
-  --step-pages 1 `
-  --output ".\captures" `
-  --confirm-live-ui
+```text
+<output>/
+└── <collection>/
+    ├── REPORT.md
+    ├── facebook-<target>/
+    │   └── <timestamp>/
+    │       ├── session.json
+    │       ├── manifest.json
+    │       ├── run.ndjson
+    │       ├── media/
+    │       │   ├── 001-red-mural-beside-cafe-door.png
+    │       │   └── 002-birthday-table-with-blue-balloons.png
+    │       ├── screenshots/
+    │       ├── trace/
+    │       └── raw/
+    └── instagram-<target>/
+        └── <timestamp>/
+            └── ...
 ```
+
+`REPORT.md` contains:
+
+- totals for processed sources, captured images, rejected frames, and recommendations;
+- a source/status summary table;
+- a table containing every image preview, descriptive filename, description, and WhatsApp rating;
+- a ranked WhatsApp shortlist with a visible-content reason;
+- notes about partial sessions and responsible sharing.
+
+`manifest.json` remains the machine-readable source of truth. `run.ndjson` records screenshot and action events. Reports use relative links, so the complete collection folder can be moved as one unit.
+
+## WhatsApp ratings
+
+The rating is an editorial suggestion based on visible content:
+
+| Rating | Meaning |
+| ---: | --- |
+| 5 | Expressive, clear, well composed, and likely to start or enrich a conversation. |
+| 4 | Strong and shareable with a clear subject or mood. |
+| 3 | Usable with context but ordinary, busy, or less legible on a phone. |
+| 2 | Weak crop, repetitive, unclear, or unlikely to add much. |
+| 1 | Misleading, sensitive, irrelevant, unusable, or inappropriate to share. |
+
+Ratings do not grant permission to share an image. Codex should prefer respectful, non-sensitive material and avoid recommending private data or ambiguous content.
 
 ## Bundled workflows
 
 | Preset | Intended surface | Advance strategy |
 | --- | --- | --- |
-| `generic-lightbox-gallery` | Conventional thumbnail gallery and single-image viewer | Right Arrow |
-| `facebook-photos` | Profile owner-photo grid and dark photo viewer | Right Arrow |
-| `instagram-photo-posts` | Post modal, accepting still images and rejecting video | Agent locates the outer next-post control |
+| `facebook-photos` | Profile owner-photo grid and photo viewer | Right Arrow |
+| `instagram-photo-posts` | Post modal, accepting still images and rejecting video | Visually located outer next-post control |
+| `generic-lightbox-gallery` | Conventional thumbnail gallery and image viewer | Right Arrow |
 
-Website layouts change. Facebook and Instagram workflows are bounded starting points, not compatibility guarantees.
-
-## Output and resumable sessions
-
-Each run creates an isolated directory:
-
-```text
-<output>/<workflow-or-page>/<timestamp>/
-├── session.json       # active agent session and target Edge window
-├── manifest.json      # accepted and rejected items; source of truth
-├── run.ndjson         # timestamped actions and events
-├── media/             # accepted images
-├── screenshots/       # frames returned to the agent
-├── trace/
-└── raw/               # temporary crop candidates
-```
-
-`status --session PATH` can inspect a session without operating the UI. `finish` is idempotent. Input images passed to `save` or `reject` must live inside that session's run directory.
-
-Deduplication is byte-exact after cropping; visually similar images with different pixels can remain distinct.
+Website layouts change. These workflows are bounded starting points, not compatibility guarantees.
 
 ## Safety boundaries
 
 - Only `click`, `key`, `wait`, and `done` actions exist.
-- Clicks use window-relative ratios from `0` through `1` and remain inside the created Edge window.
-- Keyboard input is restricted by the active workflow and a fixed safe-key allowlist.
-- Per-stage and global action/screenshot limits prevent unbounded loops.
-- Workflows cannot contain shell commands, JavaScript, arbitrary PowerShell, credentials, or account-specific URLs.
-- The runner only accepts crop inputs located within the session directory.
-- A live opening command always requires `--confirm-live-ui`.
-- Authentication is manual; the project never reads cookies, passwords, or browser profile files.
+- Clicks use window-relative ratios and stay inside the created Edge window.
+- Keys are restricted by both a global allowlist and the active workflow.
+- Per-stage and global limits prevent unbounded loops.
+- Workflow files cannot execute shell commands, JavaScript, arbitrary PowerShell, or embedded URLs.
+- Crop inputs must be local screenshots inside their own session directory.
+- Opening a live session requires `--confirm-live-ui`.
+- Authentication remains manual; the project never reads cookies, passwords, or profile files.
 
-Stop when a page shows a CAPTCHA, account checkpoint, security prompt, consent change, or rate-limit message. Do not use this project to bypass access controls or collect content you are not authorized to access.
+Stop on CAPTCHA, account checkpoint, security prompt, consent change, or rate limit. Do not bypass access controls or collect content the user is not authorized to retain.
 
 ## VM and resolution behavior
 
-For desktop isolation, install and run Codex/the code agent, this skill, Edge, Node.js, and PowerShell inside the same persistent Windows VM. Keep the VM console rendered and unlocked.
+Install Codex/the code agent, this skill, Edge, Node.js, and PowerShell inside the same persistent Windows VM. Keep its graphical console rendered and unlocked.
 
-Clicks and crop boxes use ratios, so the system is not tied to one fixed resolution. A stable VM resolution and display scale still improve repeatability because layouts can reflow, controls can move, and responsive breakpoints can change what is visible. See [VM setup](references/vm-setup.md).
-
-## Custom workflows
-
-Copy `scripts/workflows/generic-lightbox-gallery.json`, edit goals and constraints, then validate it:
-
-```powershell
-node scripts/image-scraper.mjs validate-workflow --workflow ".\my-gallery.json"
-node scripts/image-scraper.mjs start --workflow ".\my-gallery.json" --url "https://example.com" --dry-run
-```
-
-See the [workflow schema](references/workflow-schema.md) and [CLI reference](references/cli.md).
+Clicks and crop boxes use ratios, so the skill is not tied to one fixed resolution. Stable display size and scaling still improve repeatability because responsive layouts can reflow. See [VM setup](references/vm-setup.md).
 
 ## Development
 
@@ -229,25 +260,9 @@ npm run validate:workflows
 npm run doctor
 ```
 
-Automated tests are offline: they do not open Edge, move the pointer, press keys, or contact an AI service. `doctor` inspects the local runtime without launching a browser window.
+Automated tests are offline and do not operate Edge. `doctor` checks the runtime without opening a browser window.
 
-## Project layout
-
-```text
-SKILL.md                         Codex instructions and agent loop
-agents/openai.yaml               Skill UI metadata
-scripts/image-scraper.mjs        CLI entrypoint
-scripts/lib/agent-session.mjs    Agent-native session protocol
-scripts/lib/                     Artifacts, workflow, and Windows bridges
-scripts/windows/                 Native PowerShell helper
-scripts/workflows/               Bundled JSON workflows
-references/                      CLI, schema, runtime, and VM guidance
-tests/                           Offline Node.js tests
-```
-
-## Resumen en español
-
-Esta skill no necesita una API key adicional. Codex ve cada captura local y decide una sola acción; los scripts únicamente controlan Edge, recortan, deduplican y generan evidencia. No usa Playwright ni Selenium. Si no quieres perder el mouse o teclado de tu computadora principal, ejecútala completa dentro de una VM de Windows persistente.
+See [CLI reference](references/cli.md), [deliverable conventions](references/deliverables.md), and [workflow schema](references/workflow-schema.md).
 
 ## License
 

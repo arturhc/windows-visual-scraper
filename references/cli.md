@@ -1,6 +1,6 @@
 # CLI reference
 
-Run commands from the skill directory or invoke `scripts/image-scraper.mjs` by absolute path. Output paths resolve against the caller's current directory. The CLI has no external runtime dependencies and makes no AI API calls.
+Codex normally invokes these commands after interpreting a high-level collection request. Run from the skill directory or call `scripts/image-scraper.mjs` by absolute path. Relative output paths resolve against the caller's current directory. The CLI has no external runtime dependencies and makes no AI API calls.
 
 ## Read-only commands
 
@@ -12,54 +12,54 @@ node scripts/image-scraper.mjs validate-workflow --workflow "C:\path\to\workflow
 node scripts/image-scraper.mjs status --session "C:\path\to\session.json"
 ```
 
-`doctor` checks Windows, Node.js, the PowerShell helper, and Edge. It does not open or control Edge.
+`doctor` checks Windows, Node.js, PowerShell helper availability, and Edge. It does not open or control Edge.
 
-## Opening commands
+## Start a collection session
 
-`capture-page` and `start` open a new visible Edge window. Both accept:
+```powershell
+node scripts/image-scraper.mjs start `
+  --preset instagram-photo-posts `
+  --url "https://www.instagram.com/example/" `
+  --count 5 `
+  --output ".\social-collections" `
+  --collection "campaign-references" `
+  --target-label "example" `
+  --platform instagram `
+  --report-language es `
+  --confirm-live-ui
+```
 
-- `--url URL`: required HTTP or HTTPS URL.
-- `--output PATH`: base output directory; default `image-scraper-output`.
-- `--profile NAME`: Edge profile directory name; default `Default`.
-- `--launch-wait-ms N`: initial load delay from 0 through 60000; default 4000.
+Use exactly one of `--preset NAME` or `--workflow PATH`. `run` remains an alias for `start`.
+
+Options:
+
+- `--url URL`: required HTTP or HTTPS target.
+- `--count N`: accepted-image target, capped at 100 and by workflow policy.
+- `--output PATH`: shared base output; default `image-scraper-output`.
+- `--collection NAME`: shared collection/job folder; default `social-image-collection`.
+- `--target-label NAME`: readable account/source label; inferred from the URL when omitted.
+- `--platform facebook|instagram|web`: inferred from the URL when omitted.
+- `--report-language en|es`: generated report language; default `en`.
+- `--profile NAME`: Edge profile directory; default `Default`.
+- `--launch-wait-ms N`: initial load delay from 0 through 60000.
 - `--wait-ms N`: default post-action delay; default 1200.
-- `--pause-for-login`: pause for manual sign-in before automation continues.
+- `--pause-for-login`: pause for manual sign-in.
 - `--no-fullscreen`: do not send F11.
-- `--keep-open`: leave the created window open when finishing.
-- `--dry-run`: validate and print a plan without opening Edge or generating input.
-- `--confirm-live-ui`: required for live execution.
+- `--keep-open`: leave the created window open after finishing.
+- `--dry-run`: validate and print the plan without touching the UI.
+- `--confirm-live-ui`: required to start a live session.
 
-### Capture sequential viewports
+The result includes `collectionRoot`, `sessionPath`, `screenshotPath`, and instructions for the first workflow stage.
 
-```powershell
-node scripts/image-scraper.mjs capture-page --url "https://example.com" --shots 3 --step-pages 1 --confirm-live-ui
-```
+## Observe and act
 
-- `--shots N`: 1 through 50 screenshots.
-- `--step-pages N`: 0 through 20 PageDown presses between screenshots.
-- `--no-reset-scroll`: do not send Home before the first screenshot.
-
-### Start an agent-native extraction session
-
-```powershell
-node scripts/image-scraper.mjs start --preset instagram-photo-posts --url "https://www.instagram.com/example/" --count 5 --confirm-live-ui
-```
-
-Use exactly one of `--preset NAME` or `--workflow PATH`. `--count` is capped at 100 and by workflow policy. `run` remains an alias for `start` for compatibility, but now starts an agent session rather than an autonomous extraction loop.
-
-The result includes `sessionPath`, a local PNG `screenshotPath`, and workflow `instructions` for the host agent.
-
-## Session commands
-
-### Capture a fresh frame
+Capture a fresh frame:
 
 ```powershell
 node scripts/image-scraper.mjs shot --session "C:\path\to\session.json" --context open-first-post --label after-login
 ```
 
-`--context` is a workflow stage id or `collection`. Include it to receive the relevant instructions.
-
-### Execute one action
+Execute exactly one action:
 
 ```powershell
 node scripts/image-scraper.mjs act --session "C:\path\to\session.json" --context open-first-post --click "0.20,0.74"
@@ -68,41 +68,74 @@ node scripts/image-scraper.mjs act --session "C:\path\to\session.json" --context
 node scripts/image-scraper.mjs act --session "C:\path\to\session.json" --context find-posts-grid --done
 ```
 
-Choose exactly one action:
+`--context` is a workflow stage id or `collection`. Choose exactly one of `--click X,Y`, `--key KEY`, `--wait-ms N`, or `--done`. Every call validates the action and returns a new screenshot.
 
-- `--click X,Y`: window-relative ratios from 0 through 1.
-- `--key KEY`: key allowed by both the global allowlist and current workflow context.
-- `--wait-ms N`: wait 0 through 60000 ms without input.
-- `--done`: mark the context visibly satisfied.
-
-Each call validates and executes one action, waits for rendering, and returns a new screenshot. It cannot run shell commands or arbitrary key combinations.
-
-### Save an accepted image
+## Save an accepted image
 
 ```powershell
-node scripts/image-scraper.mjs save --session "C:\path\to\session.json" --input "C:\path\to\frame.png" --crop-box "0.05,0.08,0.74,0.95"
-node scripts/image-scraper.mjs save --session "C:\path\to\session.json" --input "C:\path\to\frame.png" --heuristic
-node scripts/image-scraper.mjs save --session "C:\path\to\session.json" --input "C:\path\to\frame.png" --full-window
+node scripts/image-scraper.mjs save `
+  --session "C:\path\to\session.json" `
+  --input "C:\path\to\frame.png" `
+  --crop-box "0.05,0.08,0.74,0.95" `
+  --name "sunset toast on beach" `
+  --description "Three people raise glasses in silhouette against an orange beach sunset." `
+  --tags "sunset,beach,toast" `
+  --whatsapp-rating 5 `
+  --whatsapp-reason "Warm, expressive, and immediately readable on a phone."
 ```
 
-Choose exactly one method permitted by the workflow. The input must be a PNG inside the session directory. The result is SHA-256 deduplicated.
+Choose exactly one crop method permitted by the workflow:
 
-### Reject a frame
+- `--crop-box L,T,R,B`: ratios selected by Codex after inspecting the PNG.
+- `--heuristic`: local dominant-image pixel scan.
+- `--full-window`: only for workflow crop mode `none`.
+
+Editorial metadata is required:
+
+- `--name TEXT`: concrete visible-content name. Generic names are rejected. The CLI slugifies it and adds the stable item number.
+- `--description TEXT`: factual visible-content description from 8 through 500 characters.
+- `--whatsapp-rating 1-5`: editorial suitability score.
+- `--whatsapp-reason TEXT`: score rationale from 5 through 300 characters.
+- `--tags A,B,C`: optional comma-separated visible-content tags.
+
+The input must be a PNG inside the session directory. Accepted output is deduplicated by SHA-256.
+
+## Reject a frame
 
 ```powershell
 node scripts/image-scraper.mjs reject --session "C:\path\to\session.json" --input "C:\path\to\frame.png" --reason "Viewer is not open" --media-type grid
 ```
 
-The rejection is recorded in `manifest.json` and `run.ndjson`.
+Rejections are recorded in `manifest.json` and `run.ndjson`.
 
-### Finish and clean up
+## Finish a source
 
 ```powershell
-node scripts/image-scraper.mjs finish --session "C:\path\to\session.json" --status partial --reason "No next item was visible"
+node scripts/image-scraper.mjs finish `
+  --session "C:\path\to\session.json" `
+  --status partial `
+  --summary "Captured three useful still images before the visible collection ended." `
+  --reason "No next item was visible"
 ```
 
-Status must be `complete`, `partial`, or `failed`. `finish` leaves fullscreen and closes the created Edge window unless started with `--keep-open`. Repeating it is safe.
+Status is `complete`, `partial`, or `failed`. `finish` exits fullscreen, closes the created Edge window unless `--keep-open` was used, writes the source summary, and regenerates `REPORT.md` at the collection root. Repeating it is safe.
 
-## Outputs
+## Build the consolidated report
 
-Every run has a timestamped directory with `session.json`, `manifest.json`, `run.ndjson`, `screenshots/`, `media/`, `trace/`, and `raw/`. `manifest.json` is the source of truth.
+After all source sessions finish:
+
+```powershell
+node scripts/image-scraper.mjs report --root "C:\path\to\collection" --title "Referencias de campaña" --language es
+```
+
+The command scans manifests recursively and writes `REPORT.md` containing source totals, an all-images Markdown table with previews and descriptions, and a ranked WhatsApp shortlist.
+
+## Capture sequential page viewports
+
+This deterministic mode does not use the agent session protocol:
+
+```powershell
+node scripts/image-scraper.mjs capture-page --url "https://example.com" --shots 3 --step-pages 1 --confirm-live-ui
+```
+
+Additional options are `--shots N` (1–50), `--step-pages N` (0–20), and `--no-reset-scroll`.

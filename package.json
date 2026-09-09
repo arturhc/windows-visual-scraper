@@ -1,9 +1,9 @@
 {
   "name": "windows-visual-image-scraper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Agent-native Codex skill for visually guided image capture in Microsoft Edge on Windows.",
+  "description": "Agent-native Codex skill for curated social image collection and Markdown reporting on Windows.",
   "license": "MIT",
   "repository": {
     "type": "git",
