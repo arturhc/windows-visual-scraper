@@ -1,0 +1,396 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { createRunArtifacts, sha256File, slugify } from "./artifacts.mjs";
+import { closeBrowserSession, openBrowserSession, sleep } from "./browser-session.mjs";
+import { SAFE_KEYS } from "./workflow-schema.mjs";
+import { windowsBrowser } from "./windows-bridge.mjs";
+
+const SESSION_FILE = "session.json";
+const MAX_ACTIONS = 500;
+const MAX_SHOTS = 500;
+const FINAL_STATUSES = new Set(["complete", "partial", "failed"]);
+const portable = (root, target) => path.relative(root, target).replaceAll("\\", "/");
+
+function isWithin(root, target) {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function assertWithin(root, target, label) {
+  if (!isWithin(root, target)) throw new Error(`${label} must stay inside the session run directory.`);
+  return path.resolve(target);
+}
+
+async function writeJsonAtomic(filePath, value) {
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await fs.rename(temporaryPath, filePath);
+}
+
+async function appendTrace(session, event, data = {}) {
+  const record = { at: new Date().toISOString(), event, ...data };
+  await fs.appendFile(session.tracePath, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+async function saveSession(session) {
+  session.updatedAt = new Date().toISOString();
+  await writeJsonAtomic(session.sessionPath, session);
+}
+
+async function resolveSessionPath(value) {
+  const resolved = path.resolve(value);
+  const stats = await fs.stat(resolved);
+  return stats.isDirectory() ? path.join(resolved, SESSION_FILE) : resolved;
+}
+
+export async function loadAgentSession(value, { active = false } = {}) {
+  const sessionPath = await resolveSessionPath(value);
+  const session = JSON.parse(await fs.readFile(sessionPath, "utf8"));
+  if (session.schemaVersion !== 1 || session.kind !== "agent-native") {
+    throw new Error("The supplied file is not a supported agent session.");
+  }
+  session.sessionPath = sessionPath;
+  assertWithin(session.runRoot, sessionPath, "Session path");
+  assertWithin(session.runRoot, session.manifestPath, "Manifest path");
+  assertWithin(session.runRoot, session.tracePath, "Trace path");
+  if (active && session.status !== "active") throw new Error(`Session is not active (status: ${session.status}).`);
+  return session;
+}
+
+export function parseRatioPair(value, label = "ratio pair") {
+  const parts = String(value || "").split(",").map((part) => Number(part.trim()));
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part) || part < 0 || part > 1)) {
+    throw new Error(`${label} must contain two comma-separated ratios from 0 through 1.`);
+  }
+  return { xRatio: parts[0], yRatio: parts[1] };
+}
+
+export function parseCropBox(value) {
+  const parts = String(value || "").split(",").map((part) => Number(part.trim()));
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part) || part < 0 || part > 1)) {
+    throw new Error("--crop-box must contain left,top,right,bottom ratios from 0 through 1.");
+  }
+  const [leftRatio, topRatio, rightRatio, bottomRatio] = parts;
+  if (rightRatio <= leftRatio || bottomRatio <= topRatio) {
+    throw new Error("--crop-box right/bottom must be greater than left/top.");
+  }
+  if ((rightRatio - leftRatio) * (bottomRatio - topRatio) < 0.01) {
+    throw new Error("--crop-box is too small; it must retain at least 1% of the frame.");
+  }
+  return { leftRatio, topRatio, rightRatio, bottomRatio };
+}
+
+function contextDefinition(session, context) {
+  if (context === "collection") {
+    const advance = session.workflow.collection.advance;
+    const allowedActionTypes = advance.mode === "key"
+      ? ["key", "wait", "done"]
+      : ["click", "wait", "done"];
+    return {
+      id: "collection",
+      goal: advance.goal || "Advance to the next collection item.",
+      guidance: advance.guidance || "Advance exactly one item.",
+      allowedActionTypes,
+      allowedKeys: advance.mode === "key" ? [String(advance.key).toUpperCase()] : [],
+      maxSteps: advance.maxSteps || 10,
+      settleMs: advance.waitMs,
+      fixedClick: advance.mode === "click"
+        ? { xRatio: advance.xRatio, yRatio: advance.yRatio }
+        : undefined,
+    };
+  }
+  const stage = session.workflow.stages.find((candidate) => candidate.id === context);
+  if (!stage) throw new Error(`Unknown context: ${context}. Use a workflow stage id or collection.`);
+  return stage;
+}
+
+export function validateAgentAction(context, action, usedSteps = 0) {
+  if (usedSteps >= context.maxSteps) throw new Error(`Context "${context.id}" reached its ${context.maxSteps}-step limit.`);
+  if (!context.allowedActionTypes.includes(action.type)) {
+    throw new Error(`Action ${action.type} is not allowed in context "${context.id}".`);
+  }
+  if (action.type === "key") {
+    const key = String(action.key || "").toUpperCase();
+    if (!SAFE_KEYS.has(key) || !(context.allowedKeys || []).map((item) => item.toUpperCase()).includes(key)) {
+      throw new Error(`Key ${key} is not allowed in context "${context.id}".`);
+    }
+    action.key = key;
+  }
+  if (action.type === "click") {
+    for (const [label, value] of [["xRatio", action.xRatio], ["yRatio", action.yRatio]]) {
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${label} must be from 0 through 1.`);
+    }
+    if (context.fixedClick && (action.xRatio !== context.fixedClick.xRatio || action.yRatio !== context.fixedClick.yRatio)) {
+      throw new Error(`Context "${context.id}" requires the workflow's fixed click ratios.`);
+    }
+  }
+  if (action.waitMs != null && (!Number.isInteger(action.waitMs) || action.waitMs < 0 || action.waitMs > 60_000)) {
+    throw new Error("waitMs must be an integer from 0 through 60000.");
+  }
+  return action;
+}
+
+function nextShotPath(session, label = "frame") {
+  const number = session.counters.shots + 1;
+  return path.join(session.directories.screenshots, `${String(number).padStart(3, "0")}-${slugify(label)}.png`);
+}
+
+async function captureShot(session, label, context) {
+  if (session.counters.shots >= MAX_SHOTS) throw new Error(`Session reached its ${MAX_SHOTS}-screenshot limit.`);
+  const screenshotPath = nextShotPath(session, label);
+  await windowsBrowser.screenshot(session.window, screenshotPath);
+  session.counters.shots += 1;
+  session.lastScreenshotPath = screenshotPath;
+  await appendTrace(session, "screenshot", { path: screenshotPath, context });
+  await saveSession(session);
+  return screenshotPath;
+}
+
+function agentInstructions(session, context) {
+  if (!context) {
+    return agentInstructions(session, session.workflow.stages[0].id);
+  }
+  const definition = contextDefinition(session, context);
+  const instructions = {
+    context: definition.id,
+    goal: definition.goal,
+    guidance: definition.guidance || "",
+    allowedActionTypes: definition.allowedActionTypes,
+    allowedKeys: definition.allowedKeys || [],
+    remainingSteps: definition.maxSteps - (session.contextActions[definition.id] || 0),
+    fallbackActions: definition.fallbackActions || [],
+    forceFallbackAfterStep: definition.forceFallbackAfterStep,
+    mustActBeforeDone: definition.mustActBeforeDone === true,
+  };
+  if (context === "collection") {
+    instructions.inspectionPrompt = session.workflow.collection.inspectionPrompt;
+    instructions.crop = session.workflow.collection.crop;
+    instructions.advance = session.workflow.collection.advance;
+    instructions.requestedCount = session.requestedCount;
+  }
+  return instructions;
+}
+
+export async function startAgentSession({ workflow, workflowPath, url, count, outputDir, options }) {
+  const requestedCount = Math.min(count ?? workflow.collection.defaultCount, workflow.collection.maxCount);
+  const artifacts = await createRunArtifacts(outputDir, workflow.name, {
+    kind: "agent-native",
+    workflow: workflow.name,
+    workflowPath,
+    url,
+    requestedCount,
+  });
+  const sessionPath = path.join(artifacts.directories.root, SESSION_FILE);
+  let browserSession;
+
+  try {
+    browserSession = await openBrowserSession(url, {
+      ...options,
+      launchWaitMs: options.launchWaitMs ?? workflow.browser?.launchWaitMs ?? 4_000,
+      fullscreen: options.fullscreen ?? workflow.browser?.fullscreen ?? true,
+    });
+    const session = {
+      schemaVersion: 1,
+      kind: "agent-native",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      url,
+      workflowPath,
+      workflow,
+      requestedCount,
+      runRoot: artifacts.directories.root,
+      directories: artifacts.directories,
+      manifestPath: artifacts.manifestPath,
+      tracePath: artifacts.tracePath,
+      sessionPath,
+      window: browserSession.target,
+      fullscreen: browserSession.fullscreen,
+      keepOpen: options.keepOpen === true,
+      defaultWaitMs: options.waitMs ?? 1_200,
+      counters: { shots: 0, actions: 0, saves: 0, rejections: 0 },
+      contextActions: {},
+    };
+    await artifacts.log("browser-ready", { window: session.window });
+    await saveSession(session);
+    const screenshotPath = await captureShot(session, "initial", workflow.stages[0].id);
+    return {
+      status: session.status,
+      sessionPath,
+      manifestPath: session.manifestPath,
+      screenshotPath,
+      instructions: agentInstructions(session),
+    };
+  } catch (error) {
+    await artifacts.log("start-error", { message: error.message, stack: error.stack });
+    await artifacts.writeManifest({ status: "failed", finishedAt: new Date().toISOString(), error: error.message });
+    await closeBrowserSession(browserSession, options, artifacts.log);
+    error.manifestPath = artifacts.manifestPath;
+    throw error;
+  }
+}
+
+export async function shotAgentSession({ sessionValue, label = "frame", context }) {
+  const session = await loadAgentSession(sessionValue, { active: true });
+  if (context) contextDefinition(session, context);
+  const screenshotPath = await captureShot(session, label, context);
+  return { status: session.status, sessionPath: session.sessionPath, screenshotPath, instructions: agentInstructions(session, context) };
+}
+
+async function executeAction(session, action) {
+  if (action.type === "done") return;
+  if (action.type === "wait") {
+    await sleep(action.waitMs ?? session.defaultWaitMs);
+    return;
+  }
+  if (action.type === "key") await windowsBrowser.key(session.window, action.key);
+  if (action.type === "click") {
+    const rect = await windowsBrowser.rect(session.window);
+    const x = Math.min(rect.width - 1, Math.max(0, Math.round(rect.width * action.xRatio)));
+    const y = Math.min(rect.height - 1, Math.max(0, Math.round(rect.height * action.yRatio)));
+    await windowsBrowser.click(session.window, x, y);
+  }
+  await sleep(action.waitMs ?? session.defaultWaitMs);
+}
+
+export async function actAgentSession({ sessionValue, context, action }) {
+  const session = await loadAgentSession(sessionValue, { active: true });
+  if (session.counters.actions >= MAX_ACTIONS) throw new Error(`Session reached its ${MAX_ACTIONS}-action limit.`);
+  const definition = contextDefinition(session, context);
+  const usedSteps = session.contextActions[definition.id] || 0;
+  validateAgentAction(definition, action, usedSteps);
+  if (action.type !== "wait" && action.type !== "done" && action.waitMs == null && definition.settleMs != null) {
+    action.waitMs = definition.settleMs;
+  }
+  await windowsBrowser.focus(session.window);
+  await executeAction(session, action);
+  session.counters.actions += 1;
+  session.contextActions[definition.id] = usedSteps + 1;
+  await appendTrace(session, "agent-action", { context, action });
+  await saveSession(session);
+  const screenshotPath = await captureShot(session, `${context}-after-action`, context);
+  return {
+    status: session.status,
+    sessionPath: session.sessionPath,
+    action,
+    screenshotPath,
+    instructions: agentInstructions(session, context),
+  };
+}
+
+async function readManifest(session) {
+  return JSON.parse(await fs.readFile(session.manifestPath, "utf8"));
+}
+
+async function writeManifest(session, manifest) {
+  await writeJsonAtomic(session.manifestPath, manifest);
+}
+
+export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox }) {
+  const session = await loadAgentSession(sessionValue, { active: true });
+  const sourcePath = await fs.realpath(path.resolve(inputPath));
+  const realRunRoot = await fs.realpath(session.runRoot);
+  assertWithin(realRunRoot, sourcePath, "Input image");
+  if (path.extname(sourcePath).toLowerCase() !== ".png") throw new Error("Only PNG session screenshots can be saved.");
+
+  const crop = session.workflow.collection.crop;
+  if (method === "agent" && !new Set(["agent", "agent-or-heuristic"]).has(crop.mode)) {
+    throw new Error(`Workflow crop mode ${crop.mode} does not allow an agent crop box.`);
+  }
+  if (method === "heuristic" && !new Set(["heuristic", "agent-or-heuristic"]).has(crop.mode)) {
+    throw new Error(`Workflow crop mode ${crop.mode} does not allow heuristic cropping.`);
+  }
+  if (method === "full-window" && crop.mode !== "none") {
+    throw new Error(`Workflow crop mode ${crop.mode} does not allow saving the full window.`);
+  }
+
+  const candidatePath = path.join(session.directories.raw, `candidate-${String(session.counters.saves + 1).padStart(3, "0")}.png`);
+  if (method === "agent") {
+    await windowsBrowser.cropRatios(sourcePath, candidatePath, cropBox, crop.padding || 0);
+  } else if (method === "heuristic") {
+    await windowsBrowser.cropHeuristic(sourcePath, candidatePath, crop.searchRightRatio ?? 0.82, crop.padding ?? 8);
+  } else {
+    await fs.copyFile(sourcePath, candidatePath);
+  }
+
+  const manifest = await readManifest(session);
+  if (manifest.items.length >= session.requestedCount) {
+    await fs.rm(candidatePath, { force: true });
+    throw new Error(`The requested image count (${session.requestedCount}) has already been reached.`);
+  }
+  const hash = await sha256File(candidatePath);
+  if (manifest.items.some((item) => item.sha256 === hash)) {
+    await fs.rm(candidatePath, { force: true });
+    manifest.rejectedFrames.push({ input: portable(session.runRoot, sourcePath), reason: "duplicate", sha256: hash });
+    await writeManifest(session, manifest);
+    await appendTrace(session, "frame-rejected", { reason: "duplicate", sha256: hash });
+    return { status: "duplicate", sessionPath: session.sessionPath, sha256: hash };
+  }
+
+  const index = manifest.items.length + 1;
+  const finalPath = path.join(session.directories.media, `image-${String(index).padStart(3, "0")}.png`);
+  await fs.rename(candidatePath, finalPath);
+  manifest.items.push({ index, path: portable(session.runRoot, finalPath), sha256: hash, cropSource: method });
+  await writeManifest(session, manifest);
+  session.counters.saves += 1;
+  session.contextActions.collection = 0;
+  await appendTrace(session, "frame-saved", { index, path: finalPath, sha256: hash, cropSource: method });
+  await saveSession(session);
+  return { status: "saved", sessionPath: session.sessionPath, manifestPath: session.manifestPath, imagePath: finalPath, sha256: hash, captured: manifest.items.length, requested: session.requestedCount };
+}
+
+export async function rejectAgentFrame({ sessionValue, inputPath, reason, mediaType }) {
+  const session = await loadAgentSession(sessionValue, { active: true });
+  const sourcePath = await fs.realpath(path.resolve(inputPath));
+  const realRunRoot = await fs.realpath(session.runRoot);
+  assertWithin(realRunRoot, sourcePath, "Input image");
+  const manifest = await readManifest(session);
+  manifest.rejectedFrames.push({
+    input: portable(session.runRoot, sourcePath),
+    reason,
+    ...(mediaType ? { mediaType } : {}),
+  });
+  await writeManifest(session, manifest);
+  session.counters.rejections += 1;
+  session.contextActions.collection = 0;
+  await appendTrace(session, "frame-rejected", { input: sourcePath, reason, mediaType });
+  await saveSession(session);
+  return { status: "rejected", sessionPath: session.sessionPath, rejected: manifest.rejectedFrames.length };
+}
+
+export async function statusAgentSession(sessionValue) {
+  const session = await loadAgentSession(sessionValue);
+  const manifest = await readManifest(session);
+  return {
+    status: session.status,
+    sessionPath: session.sessionPath,
+    manifestPath: session.manifestPath,
+    lastScreenshotPath: session.lastScreenshotPath,
+    captured: manifest.items.length,
+    rejected: manifest.rejectedFrames.length,
+    requested: session.requestedCount,
+    counters: session.counters,
+  };
+}
+
+export async function finishAgentSession({ sessionValue, status, reason }) {
+  const session = await loadAgentSession(sessionValue);
+  if (session.status !== "active") return statusAgentSession(session.sessionPath);
+  if (!FINAL_STATUSES.has(status)) throw new Error(`Finish status must be one of: ${[...FINAL_STATUSES].join(", ")}.`);
+  const manifest = await readManifest(session);
+  session.status = status;
+  session.finishedAt = new Date().toISOString();
+  if (reason) session.reason = reason;
+  await appendTrace(session, "session-finished", { status, reason });
+  await closeBrowserSession(
+    { window: session.window, fullscreen: session.fullscreen },
+    { keepOpen: session.keepOpen },
+    (event, data) => appendTrace(session, event, data),
+  );
+  manifest.status = status;
+  manifest.finishedAt = session.finishedAt;
+  if (reason) manifest.reason = reason;
+  await writeManifest(session, manifest);
+  await saveSession(session);
+  return statusAgentSession(session.sessionPath);
+}

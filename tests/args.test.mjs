@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { assertEdgeProfile, assertHttpUrl, assertLiveUiAuthorized, parseCli, readInteger } from "../scripts/lib/args.mjs";
 
 test("parseCli supports values and negated flags", () => {
-  assert.deepEqual(parseCli(["run", "--preset", "demo", "--no-trace", "--dry-run"]), {
-    command: "run",
+  assert.deepEqual(parseCli(["start", "--preset", "demo", "--no-trace", "--dry-run"]), {
+    command: "start",
     options: { preset: "demo", trace: false, "dry-run": true },
   });
 });

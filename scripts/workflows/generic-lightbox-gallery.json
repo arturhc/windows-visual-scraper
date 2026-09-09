@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "generic-lightbox-gallery",
   "description": "Open a visible thumbnail gallery and save unique still images from a lightbox that advances with Right Arrow.",
   "browser": { "fullscreen": true, "launchWaitMs": 4000 },
@@ -27,7 +27,7 @@
     "maxCount": 50,
     "maxAttemptsPerItem": 5,
     "inspectionPrompt": "Accept only when a single enlarged still image from the page's primary gallery is visibly open. Reject thumbnails, page screenshots, videos, ads, logos, avatars, placeholders, and ambiguous content.",
-    "crop": { "mode": "vision-or-heuristic", "searchRightRatio": 0.90, "padding": 2, "refineWithVision": true },
+    "crop": { "mode": "agent-or-heuristic", "searchRightRatio": 0.90, "padding": 2 },
     "advance": { "mode": "key", "key": "RIGHT", "waitMs": 800 }
   }
 }

@@ -5,7 +5,7 @@ The runtime uses a real Edge process and Win32 input. It does not inspect the DO
 ## Operational constraints
 
 - `CopyFromScreen` records pixels currently visible on the desktop. Keep Edge unobstructed.
-- `SendKeys` and mouse events target the foreground window. Avoid using the local keyboard or mouse during a run.
+- `SendKeys` and mouse events target the foreground window. Avoid using the local keyboard or mouse while a session action is executing.
 - Fullscreen makes screenshot geometry more consistent but temporarily changes Edge with F11.
 - Locked desktops, disconnected RDP sessions, secure-desktop prompts, display changes, browser zoom changes, and login overlays can invalidate a run.
 - The runtime identifies the Edge window by comparing handles before and after `--new-window`, then prefers a matching process and title.
@@ -14,12 +14,12 @@ The runtime uses a real Edge process and Win32 input. It does not inspect the DO
 
 ## Recovery order
 
-1. Inspect `manifest.json`, then `run.ndjson`.
-2. Inspect the last stage screenshot in `trace/` and the last collection frame in `raw/`; correlate them with `run.ndjson`.
+1. Run `status --session PATH`, then inspect `manifest.json` and `run.ndjson`.
+2. Inspect `lastScreenshotPath` from the session status and correlate it with `run.ndjson`.
 3. Confirm the correct Edge profile is signed in and the page is not showing a challenge or consent screen.
-4. Retry with a smaller count.
-5. Adjust workflow guidance before changing fallback coordinates.
-6. Change coordinates only for a stable, known layout and keep them as ratios.
+4. If the session is still active, capture a fresh `shot` before issuing another action.
+5. Retry with a smaller count.
+6. Adjust workflow guidance before changing fallback coordinates. Keep coordinates as ratios.
 
 If a run repeatedly loses focus or captures black frames, move it to a dedicated unlocked Windows worker rather than increasing retries.
 

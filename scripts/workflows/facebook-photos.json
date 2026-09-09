@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "facebook-photos",
   "description": "Find a Facebook profile's own-photo grid, open its viewer, and save unique still photos.",
   "browser": { "fullscreen": true, "launchWaitMs": 5000 },
@@ -74,7 +74,7 @@
     "maxCount": 50,
     "maxAttemptsPerItem": 5,
     "inspectionPrompt": "Accept only when Facebook's dark single-photo viewer is open and the main visible media is a still photo. Reject profile pages, grids, feeds, videos, loading placeholders, and ambiguous overlays.",
-    "crop": { "mode": "vision-or-heuristic", "searchRightRatio": 0.76, "padding": 3, "refineWithVision": true },
+    "crop": { "mode": "agent-or-heuristic", "searchRightRatio": 0.76, "padding": 3 },
     "advance": { "mode": "key", "key": "RIGHT", "waitMs": 900 }
   }
 }

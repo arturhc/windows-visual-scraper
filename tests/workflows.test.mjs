@@ -9,7 +9,7 @@ test("all bundled workflows validate", async () => {
 
 test("workflow schema rejects arbitrary actions and unsafe keys", () => {
   const base = {
-    version: 1,
+    version: 2,
     name: "bad-flow",
     stages: [{ id: "bad-stage", goal: "test", allowedActionTypes: ["shell"], allowedKeys: [], maxSteps: 1 }],
     collection: {

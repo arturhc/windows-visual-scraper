@@ -2,35 +2,38 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A reusable Codex skill and Windows CLI that captures visible page viewports or extracts still images from browser-rendered galleries through a real Microsoft Edge window.
+A reusable Codex skill for extracting visible images through a real Microsoft Edge window on Windows. Codex—or another code agent that can inspect local images—provides the visual intelligence. The bundled Node.js and PowerShell scripts only expose bounded browser controls, screenshots, crops, deduplication, and audit artifacts.
 
-It was designed for cases where authentication, client-side rendering, or a visual-only interface makes direct HTTP downloads impractical. It does not use Playwright, Selenium, DOM selectors, cookie export, or browser-profile copying.
+**No OpenAI SDK, separate API key, or model configuration is required.** The skill uses the model already running in Codex. Its scripts do not send screenshots to an AI API.
+
+It is intended for cases where authentication, client-side rendering, or a visual-only interface makes direct downloads impractical. It does not use Playwright, Selenium, DOM selectors, cookie export, or browser-profile copying.
 
 > [!IMPORTANT]
-> This project automates visible browser interaction. It can take focus and briefly move the pointer on the Windows machine where it runs. A dedicated Windows VM is recommended when the host desktop must remain usable. A VM provides isolation, not immunity from website rules, rate limits, or account enforcement.
+> This project controls a visible desktop. It can take focus and briefly move the pointer. Run it inside a dedicated Windows VM when the main desktop must remain usable. A VM isolates the desktop; it does not hide automation or prevent website rate limits, challenges, or account enforcement.
 
-## What it does
-
-- Opens a separate Edge window with a user-selected local profile.
-- Captures the visible window with native Windows APIs.
-- Uses constrained visual reasoning to choose safe gallery-navigation actions.
-- Accepts still images while rejecting videos, grids, feeds, placeholders, and ambiguous frames.
-- Crops the visible image with model-provided ratios or a local pixel heuristic.
-- Rejects exact duplicate output using SHA-256 hashes.
-- Writes a timestamped manifest, NDJSON decision log, raw frames, and trace screenshots.
-- Closes only the Edge window created for the run unless `--keep-open` is selected.
+## How it works
 
 ```mermaid
 flowchart LR
-    A[Codex or CLI] --> B[Validated workflow]
-    B --> C[PowerShell + Win32]
-    C --> D[Visible Edge window]
-    D --> E[PNG screenshot]
-    E --> F[Visual decision]
-    F --> C
-    E --> G[Inspect and crop]
-    G --> H[Media + manifest + trace]
+    A[Codex / code agent] -->|start| B[Windows control CLI]
+    B --> C[Visible Edge window]
+    C --> D[Local PNG screenshot]
+    D -->|inspect pixels| A
+    A -->|one validated action| B
+    A -->|save / reject| B
+    B --> E[Media + manifest + trace]
 ```
+
+The agent and scripts have deliberately separate jobs:
+
+- The agent inspects each returned PNG and decides what is visibly true.
+- Workflow JSON constrains allowed actions, keys, step counts, crop policy, and acceptance criteria.
+- The CLI executes one action at a time against the Edge window saved in `session.json`.
+- PowerShell uses native Windows screenshot and input APIs.
+- Accepted images are cropped locally and deduplicated with SHA-256.
+- `manifest.json` and `run.ndjson` preserve an auditable record.
+
+There is no hidden autonomous model loop inside the CLI. This is what makes the repository usable directly by Codex and other image-capable coding agents without separate credentials.
 
 ## Requirements
 
@@ -38,13 +41,13 @@ flowchart LR
 - Microsoft Edge.
 - Node.js 20 or newer.
 - PowerShell 5.1 or newer.
-- `OPENAI_API_KEY` for visual extraction workflows.
+- Codex or another code agent capable of opening local PNG screenshots.
 
-The `capture-page` command does not use the OpenAI API.
+The repository currently has no npm runtime dependencies.
 
-## Install as a Codex user skill
+## Install as a Codex skill
 
-Codex discovers personal skills under `.agents/skills` in the user's profile. From PowerShell:
+Codex discovers personal skills under `.agents/skills` in the user's profile:
 
 ```powershell
 $skillDirectory = Join-Path $env:USERPROFILE ".agents\skills\windows-visual-image-scraper"
@@ -53,42 +56,101 @@ npm ci --prefix $skillDirectory
 node "$skillDirectory\scripts\image-scraper.mjs" doctor
 ```
 
-Restart Codex if the skill does not appear immediately. Invoke it explicitly with:
+Restart Codex if the skill does not appear immediately. Then invoke it explicitly, for example:
 
 ```text
 $windows-visual-image-scraper capture five still images from this gallery URL
 ```
 
-The skill can also be installed from this GitHub repository using Codex's `$skill-installer`.
+The skill can also be installed from this repository with Codex's `$skill-installer`.
 
-## Quick start
+## Quick start for agents
 
-Clone for standalone CLI use:
-
-```powershell
-git clone https://github.com/arturhc/windows-visual-image-scraper.git
-Set-Location windows-visual-image-scraper
-npm ci
-npm run doctor
-```
-
-List the bundled workflows:
+First resolve and validate the plan without touching the desktop:
 
 ```powershell
-npm run list-presets
-```
-
-Validate a command without opening Edge or generating input:
-
-```powershell
-node scripts/image-scraper.mjs run `
+node scripts/image-scraper.mjs start `
   --preset generic-lightbox-gallery `
   --url "https://example.com/gallery" `
   --count 3 `
   --dry-run
 ```
 
-Capture sequential page viewports:
+Start the visible session only after the user authorizes desktop control:
+
+```powershell
+node scripts/image-scraper.mjs start `
+  --preset generic-lightbox-gallery `
+  --url "https://example.com/gallery" `
+  --count 3 `
+  --output ".\captures" `
+  --pause-for-login `
+  --confirm-live-ui
+```
+
+`start` returns JSON containing `sessionPath`, `screenshotPath`, and instructions for the first stage. The agent must inspect that PNG, then issue one action:
+
+```powershell
+node scripts/image-scraper.mjs act `
+  --session "C:\captures\...\session.json" `
+  --context open-first-image `
+  --click "0.25,0.55"
+```
+
+Every `act` returns the next screenshot. When the stage is visibly complete:
+
+```powershell
+node scripts/image-scraper.mjs act `
+  --session "C:\captures\...\session.json" `
+  --context open-first-image `
+  --done
+```
+
+Capture and evaluate the collection frame:
+
+```powershell
+node scripts/image-scraper.mjs shot `
+  --session "C:\captures\...\session.json" `
+  --context collection
+```
+
+After inspecting the PNG, save a precisely selected crop or reject it:
+
+```powershell
+node scripts/image-scraper.mjs save `
+  --session "C:\captures\...\session.json" `
+  --input "C:\captures\...\screenshots\004-collection.png" `
+  --crop-box "0.05,0.08,0.74,0.95"
+
+node scripts/image-scraper.mjs reject `
+  --session "C:\captures\...\session.json" `
+  --input "C:\captures\...\screenshots\004-collection.png" `
+  --reason "The visible media is a video" `
+  --media-type video
+```
+
+Advance according to the returned workflow instructions, then inspect the new PNG:
+
+```powershell
+node scripts/image-scraper.mjs act `
+  --session "C:\captures\...\session.json" `
+  --context collection `
+  --key RIGHT
+```
+
+Always finish the session so fullscreen and the created window are cleaned up:
+
+```powershell
+node scripts/image-scraper.mjs finish `
+  --session "C:\captures\...\session.json" `
+  --status complete
+```
+
+Use `partial` if some images were saved but the requested count was not reached, and `failed` when none were usable.
+
+## Capture page viewports
+
+For deterministic screenshots that do not require agent decisions:
 
 ```powershell
 node scripts/image-scraper.mjs capture-page `
@@ -99,77 +161,64 @@ node scripts/image-scraper.mjs capture-page `
   --confirm-live-ui
 ```
 
-Run a visual extraction workflow:
-
-```powershell
-node scripts/image-scraper.mjs run `
-  --preset generic-lightbox-gallery `
-  --url "https://example.com/gallery" `
-  --count 3 `
-  --output ".\captures" `
-  --pause-for-login `
-  --confirm-live-ui
-```
-
-Live execution always requires `--confirm-live-ui`. Authentication remains manual.
-
 ## Bundled workflows
 
 | Preset | Intended surface | Advance strategy |
 | --- | --- | --- |
 | `generic-lightbox-gallery` | Conventional thumbnail gallery and single-image viewer | Right Arrow |
-| `facebook-photos` | A profile's own-photo grid and dark photo viewer | Right Arrow |
-| `instagram-photo-posts` | Profile post modal, accepting still images and skipping video | Visually located outer next-post control |
+| `facebook-photos` | Profile owner-photo grid and dark photo viewer | Right Arrow |
+| `instagram-photo-posts` | Post modal, accepting still images and rejecting video | Agent locates the outer next-post control |
 
-Website layouts change. Treat the Facebook and Instagram presets as bounded starting points, not a compatibility guarantee.
+Website layouts change. Facebook and Instagram workflows are bounded starting points, not compatibility guarantees.
 
-## Output
+## Output and resumable sessions
 
-Each execution creates an isolated run directory:
+Each run creates an isolated directory:
 
 ```text
 <output>/<workflow-or-page>/<timestamp>/
-├── manifest.json
-├── run.ndjson
-├── media/
-├── screenshots/
+├── session.json       # active agent session and target Edge window
+├── manifest.json      # accepted and rejected items; source of truth
+├── run.ndjson         # timestamped actions and events
+├── media/             # accepted images
+├── screenshots/       # frames returned to the agent
 ├── trace/
-└── raw/
+└── raw/               # temporary crop candidates
 ```
 
-`manifest.json` is the source of truth. Its status is `complete`, `partial`, or `failed`. Every accepted image includes its relative path, SHA-256 hash, crop method, refinement state, and inspection confidence.
+`status --session PATH` can inspect a session without operating the UI. `finish` is idempotent. Input images passed to `save` or `reject` must live inside that session's run directory.
 
-Deduplication is byte-exact after cropping; visually similar images with different pixels may remain distinct.
+Deduplication is byte-exact after cropping; visually similar images with different pixels can remain distinct.
 
-## Safety model
+## Safety boundaries
 
-The workflow format is intentionally limited:
+- Only `click`, `key`, `wait`, and `done` actions exist.
+- Clicks use window-relative ratios from `0` through `1` and remain inside the created Edge window.
+- Keyboard input is restricted by the active workflow and a fixed safe-key allowlist.
+- Per-stage and global action/screenshot limits prevent unbounded loops.
+- Workflows cannot contain shell commands, JavaScript, arbitrary PowerShell, credentials, or account-specific URLs.
+- The runner only accepts crop inputs located within the session directory.
+- A live opening command always requires `--confirm-live-ui`.
+- Authentication is manual; the project never reads cookies, passwords, or browser profile files.
 
-- Only `click`, `key`, `wait`, and `done` actions are accepted.
-- Clicks use window-relative ratios and must remain inside the created Edge window.
-- Keyboard input is restricted to a small whitelist.
-- Workflows cannot execute shell commands, arbitrary PowerShell, JavaScript, URLs, or filesystem operations.
-- The visual planner is instructed never to operate account, privacy, checkout, messaging, deletion, upload, consent, or browser-navigation controls.
-- The runner stops on errors and records partial artifacts instead of silently claiming success.
+Stop when a page shows a CAPTCHA, account checkpoint, security prompt, consent change, or rate-limit message. Do not use this project to bypass access controls or collect content you are not authorized to access.
 
-Do not use this project to bypass access controls, CAPTCHAs, checkpoints, rate limits, or a site's terms. Collect only content you are authorized to access and retain.
+## VM and resolution behavior
 
-## Dedicated VM
+For desktop isolation, install and run Codex/the code agent, this skill, Edge, Node.js, and PowerShell inside the same persistent Windows VM. Keep the VM console rendered and unlocked.
 
-For isolation, install and execute the entire project inside a persistent Windows VM. The Edge process and the CLI must live in the same guest operating system.
-
-See [Dedicated Windows VM setup](references/vm-setup.md) for display, RDP, shared-folder, and first-run guidance.
+Clicks and crop boxes use ratios, so the system is not tied to one fixed resolution. A stable VM resolution and display scale still improve repeatability because layouts can reflow, controls can move, and responsive breakpoints can change what is visible. See [VM setup](references/vm-setup.md).
 
 ## Custom workflows
 
-New sites normally require only a JSON workflow, not new Windows automation code. Start from `scripts/workflows/generic-lightbox-gallery.json`, then validate it:
+Copy `scripts/workflows/generic-lightbox-gallery.json`, edit goals and constraints, then validate it:
 
 ```powershell
 node scripts/image-scraper.mjs validate-workflow --workflow ".\my-gallery.json"
-node scripts/image-scraper.mjs run --workflow ".\my-gallery.json" --url "https://example.com" --dry-run
+node scripts/image-scraper.mjs start --workflow ".\my-gallery.json" --url "https://example.com" --dry-run
 ```
 
-See [Workflow schema](references/workflow-schema.md) for every field and invariant. See [CLI reference](references/cli.md) for all options and environment variables.
+See the [workflow schema](references/workflow-schema.md) and [CLI reference](references/cli.md).
 
 ## Development
 
@@ -180,25 +229,26 @@ npm run validate:workflows
 npm run doctor
 ```
 
-Tests do not open Edge, move the pointer, press keys, or call the OpenAI API. `doctor` inspects the local runtime without launching a browser window.
+Automated tests are offline: they do not open Edge, move the pointer, press keys, or contact an AI service. `doctor` inspects the local runtime without launching a browser window.
 
 ## Project layout
 
 ```text
-SKILL.md                         Codex instructions and routing
-agents/openai.yaml               UI metadata and invocation policy
+SKILL.md                         Codex instructions and agent loop
+agents/openai.yaml               Skill UI metadata
 scripts/image-scraper.mjs        CLI entrypoint
-scripts/lib/                     Workflow, vision, artifacts, and Windows bridge
+scripts/lib/agent-session.mjs    Agent-native session protocol
+scripts/lib/                     Artifacts, workflow, and Windows bridges
 scripts/windows/                 Native PowerShell helper
-scripts/workflows/               Bundled JSON presets
+scripts/workflows/               Bundled JSON workflows
 references/                      CLI, schema, runtime, and VM guidance
 tests/                           Offline Node.js tests
 ```
 
+## Resumen en español
+
+Esta skill no necesita una API key adicional. Codex ve cada captura local y decide una sola acción; los scripts únicamente controlan Edge, recortan, deduplican y generan evidencia. No usa Playwright ni Selenium. Si no quieres perder el mouse o teclado de tu computadora principal, ejecútala completa dentro de una VM de Windows persistente.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Resumen en español
-
-Esta skill captura imágenes mediante una ventana real y visible de Microsoft Edge en Windows. No usa Playwright ni Selenium. Para no perder el control del mouse y teclado de tu computadora principal, ejecútala dentro de una VM de Windows persistente. La VM aísla el escritorio, pero no elimina los riesgos de automatizar una cuenta ni autoriza el scraping de contenido ajeno.

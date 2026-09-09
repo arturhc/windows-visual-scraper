@@ -8,7 +8,7 @@ The CLI must run inside the guest operating system. Running it on the host while
 
 - Windows 11 with a persistent virtual disk.
 - Hyper-V, VMware, or VirtualBox with a normal graphical console.
-- Microsoft Edge, Git, and Node.js 20 or newer installed in the guest.
+- Microsoft Edge, Git, Node.js 20 or newer, and Codex or another image-capable code agent installed in the guest.
 - A fixed display resolution such as 1920x1080 and 100% display scaling.
 - A dedicated Edge profile signed in manually by the user.
 - A shared output directory that does not expose the Edge profile, cookies, or credential stores.
@@ -35,14 +35,14 @@ npm ci --prefix $skillDirectory
 node "$skillDirectory\scripts\image-scraper.mjs" doctor
 ```
 
-Set `OPENAI_API_KEY` in the guest process environment before running an extraction workflow. Page viewport capture does not require an API key.
+No separate AI API key is needed. The agent running inside the guest inspects local screenshots with its existing model session; the bundled scripts never contact an AI service.
 
 ## First run
 
 Start with a dry run:
 
 ```powershell
-node "$skillDirectory\scripts\image-scraper.mjs" run `
+node "$skillDirectory\scripts\image-scraper.mjs" start `
   --preset generic-lightbox-gallery `
   --url "https://example.com/gallery" `
   --count 2 `
@@ -50,7 +50,7 @@ node "$skillDirectory\scripts\image-scraper.mjs" run `
   --dry-run
 ```
 
-For the first live run, add `--pause-for-login` and `--confirm-live-ui`. Observe the complete run from the VM console before leaving the guest unattended.
+For the first live session, add `--pause-for-login` and `--confirm-live-ui`. Confirm that the agent can open the returned PNG, then observe its screenshot/action loop from the VM console before unattended use.
 
 ## Account boundaries
 

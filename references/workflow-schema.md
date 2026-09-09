@@ -1,18 +1,15 @@
 # Workflow schema
 
-Read this reference only when adding or adapting a visual extraction workflow.
+Read this reference when adding or adapting an agent-guided extraction workflow.
 
 ## Shape
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "name": "example-gallery",
   "description": "Open a viewer and save unique still images.",
-  "browser": {
-    "fullscreen": true,
-    "launchWaitMs": 4000
-  },
+  "browser": { "fullscreen": true, "launchWaitMs": 4000 },
   "stages": [
     {
       "id": "open-viewer",
@@ -21,8 +18,6 @@ Read this reference only when adding or adapting a visual extraction workflow.
       "allowedActionTypes": ["click", "key", "wait", "done"],
       "allowedKeys": ["HOME", "PGDN", "END", "ESC", "ENTER"],
       "maxSteps": 6,
-      "forceFallbackAfterStep": 3,
-      "mustActBeforeDone": true,
       "settleMs": 900,
       "fallbackActions": [
         { "type": "click", "xRatio": 0.25, "yRatio": 0.70 },
@@ -36,46 +31,39 @@ Read this reference only when adding or adapting a visual extraction workflow.
     "maxCount": 25,
     "maxAttemptsPerItem": 8,
     "inspectionPrompt": "Accept only when a still image is open in the viewer.",
-    "crop": {
-      "mode": "vision-or-heuristic",
-      "searchRightRatio": 0.75,
-      "padding": 4,
-      "refineWithVision": true
-    },
-    "advance": {
-      "mode": "key",
-      "key": "RIGHT",
-      "waitMs": 700
-    }
+    "crop": { "mode": "agent-or-heuristic", "searchRightRatio": 0.75, "padding": 4 },
+    "advance": { "mode": "key", "key": "RIGHT", "waitMs": 700 }
   }
 }
 ```
 
 ## Invariants
 
-- `version` must be `1`.
-- `name` must be lowercase hyphen-case.
-- A workflow may have at most 20 stages; each stage may have at most 30 steps.
+- `version` must be `2`.
+- Names and stage ids use lowercase hyphen-case.
+- A workflow has 1 through 20 stages; each stage has 1 through 30 steps.
 - Supported actions are `click`, `key`, `wait`, and `done`.
 - Supported keys are `HOME`, `END`, `PGDN`, `LEFT`, `RIGHT`, `ESC`, `ENTER`, `SPACE`, and `F11`.
-- Click coordinates are ratios from 0 through 1 relative to the captured Edge window.
+- Click coordinates are ratios from 0 through 1 relative to the Edge window.
 - Workflows cannot execute shell commands, JavaScript, arbitrary PowerShell, URLs, or filesystem operations.
-- The URL always comes from the live CLI invocation. Do not embed account-specific URLs in reusable workflows.
-- `collection.inspectionPrompt` determines whether a frame is accepted. Make rejection criteria explicit.
+- The target URL comes from the live invocation; do not embed account-specific URLs.
+- Make `collection.inspectionPrompt` explicit enough for the host agent to distinguish still images from videos, grids, placeholders, or ambiguous states.
+
+`fallbackActions`, `forceFallbackAfterStep`, and `mustActBeforeDone` remain descriptive hints for host agents and compatibility. The CLI never executes fallback actions automatically; the agent must inspect the screenshot and request every action.
 
 ## Crop modes
 
-- `vision`: require a crop box from visual inspection.
-- `vision-or-heuristic`: prefer the visual crop box, then scan the screenshot for the dominant active image region.
-- `heuristic`: use pixel scanning without a crop box from the model.
+- `agent`: require `save --crop-box` ratios selected by the host agent.
+- `agent-or-heuristic`: allow either an agent crop box or the local pixel heuristic.
+- `heuristic`: require the local dominant-image scan.
 - `none`: retain the full Edge-window screenshot.
 
-`refineWithVision` performs one additional crop review on the saved image and rewrites it only when the proposed reduction is meaningful.
+`padding` expands a selected crop by a bounded number of pixels. `searchRightRatio` limits the heuristic's horizontal search area.
 
 ## Advance modes
 
-- `key`: send one whitelisted key.
-- `click`: click a fixed ratio.
-- `vision`: ask for the visible next-item control and execute a bounded `click`, `wait`, or `done` loop.
+- `key`: send the declared whitelisted key in `collection` context.
+- `click`: click the declared stable ratio in `collection` context.
+- `agent`: visually locate the next-item control with bounded `click`, `wait`, or `done` actions.
 
-For a carousel, state whether the workflow should advance inside the current item or move to the next publication. Never leave that distinction implicit.
+For carousels, specify whether to advance an inner slide or the outer publication.

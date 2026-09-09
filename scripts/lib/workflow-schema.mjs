@@ -14,8 +14,8 @@ export const SAFE_KEYS = new Set([
   "SPACE",
   "F11",
 ]);
-export const CROP_MODES = new Set(["vision", "vision-or-heuristic", "heuristic", "none"]);
-export const ADVANCE_MODES = new Set(["key", "click", "vision"]);
+export const CROP_MODES = new Set(["agent", "agent-or-heuristic", "heuristic", "none"]);
+export const ADVANCE_MODES = new Set(["key", "click", "agent"]);
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 export const skillRoot = path.resolve(moduleDir, "..", "..");
@@ -51,7 +51,7 @@ function validateAction(action, label) {
 
 export function validateWorkflow(workflow) {
   assertObject(workflow, "workflow");
-  if (workflow.version !== 1) throw new Error("workflow.version must be 1.");
+  if (workflow.version !== 2) throw new Error("workflow.version must be 2.");
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(workflow.name || ""))) {
     throw new Error("workflow.name must be lowercase hyphen-case.");
   }
@@ -136,8 +136,8 @@ export function validateWorkflow(workflow) {
     assertRatio(collection.advance.xRatio, "workflow.collection.advance.xRatio");
     assertRatio(collection.advance.yRatio, "workflow.collection.advance.yRatio");
   }
-  if (collection.advance.mode === "vision" && !String(collection.advance.goal || "").trim()) {
-    throw new Error("workflow.collection.advance.goal is required for vision mode.");
+  if (collection.advance.mode === "agent" && !String(collection.advance.goal || "").trim()) {
+    throw new Error("workflow.collection.advance.goal is required for agent mode.");
   }
   if (collection.advance.maxSteps != null && (!Number.isInteger(collection.advance.maxSteps) || collection.advance.maxSteps < 1 || collection.advance.maxSteps > 10)) {
     throw new Error("workflow.collection.advance.maxSteps must be an integer from 1 through 10.");

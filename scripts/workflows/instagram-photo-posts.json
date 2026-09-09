@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "instagram-photo-posts",
   "description": "Open an Instagram profile grid and save unique still-image publications while skipping video posts.",
   "browser": { "fullscreen": true, "launchWaitMs": 5000 },
@@ -42,9 +42,9 @@
     "maxCount": 50,
     "maxAttemptsPerItem": 8,
     "inspectionPrompt": "Accept only when an Instagram post modal is open and its principal media is a still image. Reject videos, reels, animated/loading frames, profile grids, feeds, and ambiguous posts. A carousel qualifies only when its currently visible slide is a still image.",
-    "crop": { "mode": "vision", "searchRightRatio": 0.72, "padding": 0, "refineWithVision": true },
+    "crop": { "mode": "agent", "searchRightRatio": 0.72, "padding": 0 },
     "advance": {
-      "mode": "vision",
+      "mode": "agent",
       "goal": "Advance to the next Instagram publication using the outer next-post arrow. Do not click an inner carousel arrow.",
       "guidance": "The desired arrow sits outside the current modal content near the far-right edge. Return done when no next publication control exists.",
       "maxSteps": 3,
