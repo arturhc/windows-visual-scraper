@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "name": "generic-lightbox-gallery",
+  "description": "Open a visible thumbnail gallery and save unique still images from a lightbox that advances with Right Arrow.",
+  "browser": { "fullscreen": true, "launchWaitMs": 4000 },
+  "stages": [
+    {
+      "id": "open-first-image",
+      "goal": "Open the first genuine gallery image in a single-image lightbox or viewer.",
+      "guidance": "Use the page's main image gallery. Avoid logos, avatars, ads, navigation, account controls, and destructive controls. Return done only when one enlarged still image is visible.",
+      "allowedActionTypes": ["click", "key", "wait", "done"],
+      "allowedKeys": ["HOME", "PGDN", "ESC", "ENTER"],
+      "maxSteps": 8,
+      "forceFallbackAfterStep": 5,
+      "mustActBeforeDone": false,
+      "settleMs": 700,
+      "fallbackActions": [
+        { "type": "key", "key": "HOME", "waitMs": 700 },
+        { "type": "click", "xRatio": 0.25, "yRatio": 0.55, "waitMs": 1000 },
+        { "type": "wait", "waitMs": 800 },
+        { "type": "done" }
+      ]
+    }
+  ],
+  "collection": {
+    "defaultCount": 5,
+    "maxCount": 50,
+    "maxAttemptsPerItem": 5,
+    "inspectionPrompt": "Accept only when a single enlarged still image from the page's primary gallery is visibly open. Reject thumbnails, page screenshots, videos, ads, logos, avatars, placeholders, and ambiguous content.",
+    "crop": { "mode": "vision-or-heuristic", "searchRightRatio": 0.90, "padding": 2, "refineWithVision": true },
+    "advance": { "mode": "key", "key": "RIGHT", "waitMs": 800 }
+  }
+}

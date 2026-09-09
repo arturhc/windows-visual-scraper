@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "instagram-photo-posts",
+  "description": "Open an Instagram profile grid and save unique still-image publications while skipping video posts.",
+  "browser": { "fullscreen": true, "launchWaitMs": 5000 },
+  "stages": [
+    {
+      "id": "find-posts-grid",
+      "goal": "Make the Instagram profile post grid clearly visible.",
+      "guidance": "Dismiss harmless overlays with Escape if needed. Scroll only enough to expose the regular square post grid. Return done when multiple post tiles are visible.",
+      "allowedActionTypes": ["key", "wait", "done"],
+      "allowedKeys": ["HOME", "PGDN", "ESC"],
+      "maxSteps": 6,
+      "forceFallbackAfterStep": 4,
+      "settleMs": 700,
+      "fallbackActions": [
+        { "type": "key", "key": "ESC", "waitMs": 500 },
+        { "type": "key", "key": "HOME", "waitMs": 900 },
+        { "type": "key", "key": "PGDN", "waitMs": 900 },
+        { "type": "done" }
+      ]
+    },
+    {
+      "id": "open-first-post",
+      "goal": "Open the first real post tile in Instagram's modal viewer.",
+      "guidance": "Prefer the top-left fully visible tile in the regular post grid. Avoid profile controls, story circles, Reels tab controls, suggested accounts, and navigation. Return done only when a post modal is visibly open.",
+      "allowedActionTypes": ["click", "wait", "done"],
+      "allowedKeys": [],
+      "maxSteps": 6,
+      "forceFallbackAfterStep": 3,
+      "mustActBeforeDone": false,
+      "settleMs": 800,
+      "fallbackActions": [
+        { "type": "click", "xRatio": 0.20, "yRatio": 0.74, "waitMs": 1200 },
+        { "type": "wait", "waitMs": 900 },
+        { "type": "done" }
+      ]
+    }
+  ],
+  "collection": {
+    "defaultCount": 5,
+    "maxCount": 50,
+    "maxAttemptsPerItem": 8,
+    "inspectionPrompt": "Accept only when an Instagram post modal is open and its principal media is a still image. Reject videos, reels, animated/loading frames, profile grids, feeds, and ambiguous posts. A carousel qualifies only when its currently visible slide is a still image.",
+    "crop": { "mode": "vision", "searchRightRatio": 0.72, "padding": 0, "refineWithVision": true },
+    "advance": {
+      "mode": "vision",
+      "goal": "Advance to the next Instagram publication using the outer next-post arrow. Do not click an inner carousel arrow.",
+      "guidance": "The desired arrow sits outside the current modal content near the far-right edge. Return done when no next publication control exists.",
+      "maxSteps": 3,
+      "waitMs": 900
+    }
+  }
+}

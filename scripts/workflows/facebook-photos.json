@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "name": "facebook-photos",
+  "description": "Find a Facebook profile's own-photo grid, open its viewer, and save unique still photos.",
+  "browser": { "fullscreen": true, "launchWaitMs": 5000 },
+  "stages": [
+    {
+      "id": "find-photos-section",
+      "goal": "Scroll the Facebook profile until the body section named Photos or Fotos is visible with several thumbnails.",
+      "guidance": "Ignore the top navigation tabs and feed post images. Look for the dedicated profile-body photo card, usually in the left or main column.",
+      "allowedActionTypes": ["key", "wait", "done"],
+      "allowedKeys": ["HOME", "PGDN", "END", "ESC", "ENTER"],
+      "maxSteps": 8,
+      "forceFallbackAfterStep": 5,
+      "settleMs": 700,
+      "fallbackActions": [
+        { "type": "key", "key": "HOME", "waitMs": 900 },
+        { "type": "key", "key": "PGDN", "waitMs": 900 },
+        { "type": "key", "key": "PGDN", "waitMs": 900 },
+        { "type": "key", "key": "PGDN", "waitMs": 900 },
+        { "type": "done" }
+      ]
+    },
+    {
+      "id": "open-photos-grid",
+      "goal": "Open the full Photos grid from the visible profile-body Photos section.",
+      "guidance": "Prefer a link such as See all photos or Ver todas las fotos inside the body photo card. Return done if the full photos grid or a single-photo viewer is already open.",
+      "allowedActionTypes": ["click", "wait", "done"],
+      "allowedKeys": [],
+      "maxSteps": 6,
+      "forceFallbackAfterStep": 3,
+      "mustActBeforeDone": false,
+      "settleMs": 800,
+      "fallbackActions": [
+        { "type": "click", "xRatio": 0.42, "yRatio": 0.49, "waitMs": 1200 },
+        { "type": "wait", "waitMs": 1000 },
+        { "type": "done" }
+      ]
+    },
+    {
+      "id": "select-owner-photos",
+      "goal": "Activate the tab for photos belonging to the profile owner.",
+      "guidance": "Choose Photos of <owner> or Fotos de <owner>. Never choose tagged photos or Albums. Return done if the correct tab or a viewer is already active.",
+      "allowedActionTypes": ["click", "wait", "done"],
+      "allowedKeys": [],
+      "maxSteps": 5,
+      "forceFallbackAfterStep": 3,
+      "settleMs": 700,
+      "fallbackActions": [
+        { "type": "click", "xRatio": 0.29, "yRatio": 0.21, "waitMs": 1000 },
+        { "type": "wait", "waitMs": 800 },
+        { "type": "done" }
+      ]
+    },
+    {
+      "id": "open-first-photo",
+      "goal": "Open the first real photo tile and stop when the dark single-photo viewer is visible.",
+      "guidance": "Click near the center of the first real tile in the owner-photo grid. Avoid avatars, headers, menus, ads, and side panels. The desired viewer has a large image and often comments on the right.",
+      "allowedActionTypes": ["click", "wait", "done"],
+      "allowedKeys": [],
+      "maxSteps": 6,
+      "forceFallbackAfterStep": 3,
+      "mustActBeforeDone": false,
+      "settleMs": 800,
+      "fallbackActions": [
+        { "type": "click", "xRatio": 0.24, "yRatio": 0.25, "waitMs": 1200 },
+        { "type": "wait", "waitMs": 900 },
+        { "type": "done" }
+      ]
+    }
+  ],
+  "collection": {
+    "defaultCount": 5,
+    "maxCount": 50,
+    "maxAttemptsPerItem": 5,
+    "inspectionPrompt": "Accept only when Facebook's dark single-photo viewer is open and the main visible media is a still photo. Reject profile pages, grids, feeds, videos, loading placeholders, and ambiguous overlays.",
+    "crop": { "mode": "vision-or-heuristic", "searchRightRatio": 0.76, "padding": 3, "refineWithVision": true },
+    "advance": { "mode": "key", "key": "RIGHT", "waitMs": 900 }
+  }
+}

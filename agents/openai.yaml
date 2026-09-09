@@ -1,0 +1,6 @@
+interface:
+  display_name: "Windows Visual Image Scraper"
+  short_description: "Scrape images through visible Windows browser UI"
+  default_prompt: "Use $windows-visual-image-scraper to capture or extract the requested images through my visible Edge session."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,36 @@
+{
+  "name": "windows-visual-image-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Codex skill and Windows CLI for visually guided image capture in Microsoft Edge.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arturhc/windows-visual-image-scraper.git"
+  },
+  "homepage": "https://github.com/arturhc/windows-visual-image-scraper#readme",
+  "bugs": {
+    "url": "https://github.com/arturhc/windows-visual-image-scraper/issues"
+  },
+  "keywords": [
+    "codex-skill",
+    "windows",
+    "edge",
+    "visual-automation",
+    "image-scraper"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "doctor": "node scripts/image-scraper.mjs doctor",
+    "list-presets": "node scripts/image-scraper.mjs list-presets",
+    "validate:workflows": "node scripts/image-scraper.mjs validate-workflow --all",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check scripts/image-scraper.mjs && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "openai": "^6.33.0"
+  }
+}
