@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arturhc/windows-visual-image-scraper.git"
+    "url": "git+https://github.com/arturhc/windows-visual-scraper.git"
   },
-  "homepage": "https://github.com/arturhc/windows-visual-image-scraper#readme",
+  "homepage": "https://github.com/arturhc/windows-visual-scraper#readme",
   "bugs": {
-    "url": "https://github.com/arturhc/windows-visual-image-scraper/issues"
+    "url": "https://github.com/arturhc/windows-visual-scraper/issues"
   },
   "keywords": [
     "codex-skill",

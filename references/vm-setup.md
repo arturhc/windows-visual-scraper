@@ -30,7 +30,7 @@ From PowerShell inside the guest:
 
 ```powershell
 $skillDirectory = Join-Path $env:USERPROFILE ".agents\skills\windows-visual-image-scraper"
-git clone https://github.com/arturhc/windows-visual-image-scraper.git $skillDirectory
+git clone https://github.com/arturhc/windows-visual-scraper.git $skillDirectory
 npm ci --prefix $skillDirectory
 node "$skillDirectory\scripts\image-scraper.mjs" doctor
 ```
