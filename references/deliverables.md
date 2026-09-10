@@ -1,91 +1,76 @@
 # Collection deliverables
 
-Use these conventions for every multi-image collection job.
+Use one shared collection root for every source in a job. The output is both a browsable folder and a machine-readable content-intelligence dataset.
 
-## Folder plan
-
-Pass one shared base directory with `--output` and one shared job label with `--collection`. The CLI produces:
+## Required structure
 
 ```text
-<output>/
-└── <collection>/
-    ├── REPORT.md
-    ├── facebook-<target>/
-    │   └── <timestamp>/
-    │       ├── session.json
-    │       ├── manifest.json
-    │       ├── run.ndjson
-    │       ├── media/
-    │       ├── screenshots/
-    │       ├── raw/
-    │       └── trace/
-    └── instagram-<target>/
-        └── <timestamp>/
-            └── ...
+<collection>/
+├── REPORT.md
+├── content-manifest.json
+├── content-errors.ndjson                 # only when early failures occur
+├── reports/
+│   ├── images-index.md
+│   ├── videos-index.md
+│   └── run-report.md
+├── assets/
+│   └── videos/
+│       └── <semantic-video-name>/
+│           ├── original.<ext>
+│           ├── metadata.json
+│           ├── video.md
+│           ├── audio.wav                 # when enabled and present
+│           ├── transcript.*              # when requested and available
+│           └── scenes/
+│               └── scene-001/
+│                   ├── keyframe-001.jpg
+│                   └── keyframe-001.md
+└── <platform>-<target>/
+    └── <timestamp>/
+        ├── session.json                  # browser sessions only
+        ├── manifest.json
+        ├── run.ndjson
+        ├── media/
+        │   ├── 001-semantic-name.png
+        │   └── 001-semantic-name.md
+        ├── screenshots/
+        ├── raw/
+        └── trace/
 ```
 
-Direct imports from non-gallery pages use the same `<platform>-<target>/<timestamp>/` layout with `manifest.json`, `run.ndjson`, `media/`, and `raw/`; they do not create a browser `session.json`.
+Direct still-image imports use the platform/target/timestamp layout without a browser session. Every curated image and every retained video keyframe must have a same-basename Markdown twin. Raw screenshots and evidence-only viewport captures do not count as curated image assets.
 
-Use the same collection, output, and report-language values for every target in the user's request. The `collectionRoot` returned by `start` is the root to pass to `report`.
+## Descriptive naming
 
-## Descriptive filenames
+Name assets from the dominant visible subject, action, setting, and distinctive treatment. Prefer names such as `equipo-posando-en-recepcion`, `producto-azul-sobre-pedestal`, or `demostracion-de-serum-en-estudio`. Reject generic names such as `image-001`, `photo`, or `capture`.
 
-Name an image from its dominant visible subject, action, setting, and distinctive mood or color when useful. Good names are short enough to scan and specific enough to identify the image without opening it.
+Do not infer identities, relationships, locations, dates, emotions, sensitive traits, or claims that are not visually supported. Stable numeric prefixes and collision suffixes are added by the tooling.
 
-Examples:
+## Image knowledge asset
 
-- `sunset-toast-on-beach`
-- `red-mural-beside-cafe-door`
-- `black-dog-running-through-snow`
-- `birthday-table-with-blue-balloons`
+The Markdown twin should expose provenance and technical metadata, then separate observation from inference and unknowns. A deep image analysis covers exhaustive visual description, communication objective, composition, hierarchy, lighting, camera, art direction, styling, typography, color, reusable versus arbitrary choices, improvement opportunities, recreation recipe, generation prompt, negative prompt, and safe variations.
 
-Avoid:
+If deep semantic inspection has not happened yet, keep the automatically generated baseline and mark it `basic`; never present guessed detail as analyzed fact.
 
-- generic sequence names such as `image-001`, `photo`, or `capture`;
-- unverifiable identities, relationships, locations, dates, or emotions;
-- sensitive traits inferred from appearance;
-- engagement metrics or post text that is not clearly visible.
+## Video knowledge asset
 
-The CLI adds a stable numeric prefix, producing names such as `003-black-dog-running-through-snow.png`.
+Preserve the original video. `metadata.json` is authoritative for duration, resolution, fps, codecs, audio presence, hashes, scene boundaries, keyframe relationships, tool versions, errors, and processing status. `video.md` contains the semantic analysis.
 
-## Save metadata
+The hierarchy is explicit: video → scenes → keyframes. Scene boundaries come from hard cuts plus spaced meaningful visual changes. Perceptual and color-aware deduplication removes redundant frames while keeping structurally similar frames whose visual content differs materially.
 
-For each accepted frame, provide all required metadata:
+Deep analysis covers hook, narrative arc, scene timeline, shot type, camera movement, lens/perspective, lighting, art direction, editing rhythm and transitions, color progression, onscreen text, audio/transcript, communication function, essential versus arbitrary choices, recreation plan, shot list, generation prompt, and variants.
 
-```powershell
-node scripts/image-scraper.mjs save `
-  --session "C:\path\session.json" `
-  --input "C:\path\screenshots\frame.png" `
-  --crop-box "0.08,0.10,0.74,0.92" `
-  --name "sunset toast on beach" `
-  --description "Three people raise glasses in silhouette against an orange beach sunset." `
-  --tags "sunset,beach,friends,toast" `
-  --whatsapp-rating 5 `
-  --whatsapp-reason "Warm, expressive, and immediately legible on a phone screen."
-```
+## WhatsApp editorial shortlist
 
-Describe only visible content. The description should help the user distinguish the image and understand why it was selected.
+Favor clear subjects, readable moments at phone-preview size, useful emotion or discussion value, strong crops, and absence of interface clutter or private data. Penalize duplicates, tiny subjects, ambiguity, low resolution, sensitive content, and accidental frames. The requested top N is an exact cap; an explicit `recommended: false` is always respected.
 
-## WhatsApp editorial criteria
+## Final verification
 
-Favor images that:
-
-- have one clear subject or readable moment;
-- remain understandable as a small phone preview;
-- convey humor, warmth, curiosity, beauty, a reaction, or a useful discussion point;
-- are well cropped and do not include distracting browser UI;
-- are appropriate for the likely audience and do not expose private information.
-
-Penalize duplicates, clutter, tiny subjects, ambiguous context, low resolution, accidental frames, sensitive content, and screenshots dominated by interface elements. Give ratings independently. Use `--max-recommendations N` to cap the ranked shortlist at the user's requested number; the default cap is 5.
-
-## Report verification
-
-`finish` regenerates the collection report, and `report --root PATH` rebuilds it after all sessions. Before delivery:
-
-1. Compare report totals with the logical sources represented by all `manifest.json` files. Multiple attempts for the same platform and target count as one source, while the Attempts column preserves retry visibility.
-2. Confirm each Markdown preview and file link points to an existing image.
-3. Confirm every filename is descriptive and unique.
-4. Confirm each WhatsApp recommendation has a concrete visible reason.
-5. Add a short human-readable overview only if it improves the report; preserve the generated tables and relative links.
-
-Exact SHA-256 duplicates are rejected across the entire collection during save/import and suppressed again while reports are rebuilt.
+1. Confirm every curated image and retained keyframe has its Markdown twin.
+2. Confirm originals, analyses, manifests, and report links exist.
+3. Compare logical source totals with source manifests; retries remain auditable without inflating source counts.
+4. Confirm SHA-256 duplicate suppression and visual keyframe deduplication behaved as expected.
+5. Confirm `content-manifest.json` relationships resolve from video to scene to keyframe.
+6. Confirm partial failures appear in video metadata or `content-errors.ndjson` and in the run report.
+7. Confirm analysis coverage distinguishes `basic` from `analyzed` assets.
+8. Confirm no credentials, cookies, profile data, browser UI, or access-control workarounds were collected.

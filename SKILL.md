@@ -1,72 +1,84 @@
 ---
 name: windows-visual-image-scraper
-description: Collect, curate, and report visible images from Facebook profiles, Instagram profiles, or browser galleries through a real Microsoft Edge session on Windows. Use when the user gives profile URLs, handles, names, or a gallery and expects Codex to find the target, operate the visible UI, choose and crop images, save them with descriptive names, recommend good WhatsApp conversation images, and deliver a structured folder plus Markdown report. Do not use for ordinary direct downloads, DOM automation, non-Windows hosts, or bypassing access controls.
+description: Build a structured creative-reference knowledge base from visible website, Facebook, and Instagram images, plus optional authorized videos, on Windows. Use for brand content intelligence, creative reference mining, semantic media collection, image/video analysis, scene/keyframe extraction, backfill, provenance, and consolidated reports. Do not use to bypass access controls, export browser credentials, defeat DRM, or copy a reference literally.
 metadata:
-  short-description: Autonomous social image collection and report
+  short-description: Creative content intelligence on Windows
 ---
 
-# Windows Visual Image Scraper
+# Creative Content Intelligence
 
-Own the collection job from the user's high-level request to the finished deliverable. The user should be able to ask for images from a Facebook or Instagram account without naming CLI commands, coordinates, crop boxes, filenames, or report fields. Do not ask the user to drive the mouse or decide routine steps.
+Own the job from source resolution through the final reusable knowledge base. Preserve the existing visible Microsoft Edge image-acquisition workflow, but treat every retained media file as both an asset and a structured creative reference:
 
-You are the visual reasoning engine. Inspect every returned PNG yourself, decide where to click and crop, describe accepted images, and judge their conversational usefulness. The bundled CLI only opens Edge, captures the visible window, executes one constrained action, crops locally, deduplicates, and writes artifacts. It does not call an AI API or require a separate API key.
+```text
+media -> analysis -> reusable reference -> manifest -> reports
+```
 
-Resolve the skill directory from this file and invoke `scripts/image-scraper.mjs` by absolute path while preserving the caller's working directory. Before an extraction job, read [references/deliverables.md](references/deliverables.md) and [references/cli.md](references/cli.md). Read [references/windows-runtime.md](references/windows-runtime.md) after a focus, screenshot, or recovery failure. Read [references/workflow-schema.md](references/workflow-schema.md) only when adapting a workflow. For isolated execution, read [references/vm-setup.md](references/vm-setup.md).
+The compatibility identifier remains `windows-visual-image-scraper`; do not rename the folder or invocation without a migration. Read [architecture.md](references/architecture.md) when modifying the system and [output-structure.md](references/output-structure.md) when validating deliverables.
 
-## Interpret the request
+## Configure the job
 
-- Accept one or several Facebook/Instagram URLs, handles, account names, or a regular gallery URL.
-- If the user supplies an exact URL, use it. If they give a handle or name, resolve the canonical profile with available read-only web search or browser navigation. Never silently choose among materially ambiguous accounts; ask only when disambiguation is genuinely necessary.
-- Use the matching preset: `facebook-photos`, `instagram-photo-posts`, or `generic-lightbox-gallery`.
-- For an ordinary website, first determine visually whether it is a gallery. Use `generic-lightbox-gallery` only for a real gallery. For a non-gallery page, identify its principal still images and use `import-image` with the direct image URL or a local source file plus `--source-page`; do not manufacture an agent session or manifest by hand.
-- If quantity is omitted, use the preset default and stop cleanly when the visible collection ends. Never turn an open-ended phrase into unbounded scrolling.
-- Put all targets from one request under one collection root. Choose a short collection label from the task unless the user supplied one.
-- A direct request to start collecting from named targets authorizes the live UI actions needed for that task. Warn once that local execution takes focus and may move the pointer, then proceed without asking for click-by-click confirmation. Manual login, CAPTCHA, checkpoint, or account-security screens still require the user.
+Determine website, Facebook, Instagram, and other relevant sources. Do not ask again for URLs the user already supplied. When sources are missing, ask only for the missing information or offer to research official accounts. Never silently select among materially ambiguous brands.
 
-## Execute the job
+Images are enabled by default. If media scope was not specified, ask whether the user wants images only or images plus video. Video is opt-in and defaults to at most 10 videos per source. A fully specified request or config must run non-interactively. Read [configuration.md](references/configuration.md) when creating or consuming a job config.
 
-1. Run `doctor --capture-test --confirm-live-ui` once, then dry-run each planned browser target. The capture test opens a harmless temporary Edge window, writes a real PNG, and closes it; do not start extraction if it fails.
-2. Process targets sequentially because they share one interactive desktop. Start each with `--collection`, `--target-label`, `--platform`, `--report-language` matching the user's language, a common `--output`, and `--confirm-live-ui`. Use `--pause-for-login` when authentication may be missing.
-3. Open the returned `screenshotPath` with the host's local image-viewing capability. In Codex, use the local image viewer. Never infer screen state from filenames, OCR logs, workflow defaults, or prior layouts.
-4. Follow the active stage goal. Issue exactly one bounded `act`, inspect the returned screenshot, and repeat. Mark the stage `--done` only when its goal is visibly satisfied. A successful `--done` advances the saved session to the next stage and returns that next context; never continue sending the completed context.
-5. In `collection` context, decide whether the principal visible media meets `inspectionPrompt`. Reject videos, reels, grids, browser chrome, loading states, duplicates, low-confidence frames, or irrelevant UI. On Instagram, return to the grid after a rejected video and choose a tile without a play/Reels icon instead of cycling through a run of adjacent videos.
-6. For every accepted image, choose a tight crop that excludes browser chrome, comments, reactions, and navigation unless they are part of the requested evidence. Reinspect the saved image when crop quality is uncertain.
-7. Save with a concrete visible-content name, factual description, optional tags, a WhatsApp rating from 1 through 5, and a short reason. Never use generic names such as `image-001`, `photo`, or `screenshot`. Do not guess a person's identity or private context from appearance.
-8. Advance exactly one item according to the workflow, inspect the new frame, and continue until the requested count, end of collection, or a stopping condition.
-9. Call `finish` in a `finally`-style cleanup for every session. Include a concise per-target summary and use `partial` when useful images exist but the requested count was not reached.
-10. After all targets, run `report --root COLLECTION_ROOT --max-recommendations N`, where `N` is the number the user requested (default 5). Open `REPORT.md`, verify that every image link resolves, logical source counts are not inflated by retries, descriptive filenames are present, and the WhatsApp shortlist is supported by visible evidence.
+## Acquire images
 
-If no local image-viewing capability is available, stop and explain the missing capability. Do not degrade into blind coordinate execution.
+Before live UI work, read [cli.md](references/cli.md) and [deliverables.md](references/deliverables.md).
 
-## Deliverable contract
+1. Run `doctor --capture-test --confirm-live-ui`, then dry-run each browser source.
+2. Use the existing `facebook-photos`, `instagram-photo-posts`, or `generic-lightbox-gallery` workflow. Use `import-image` for a principal image on a non-gallery page.
+3. Inspect every returned PNG. Execute one bounded action at a time and accept only clear still media. Reject videos, interfaces, grids, loading states, ambiguity, irrelevant content, and duplicates.
+4. Crop tightly and save with a semantic visible-content name. Preserve the original extension for direct imports; use stable numeric suffixes only to resolve a real collision.
+5. Supply `--analysis-file` during `save`/`import-image` whenever the visual analysis is ready. The CLI always creates a twin Markdown file; without deep input it is marked `basic` and must later be upgraded with `analyze-image`.
+6. Finish every browser session in cleanup even after failure.
 
-Return a structured collection containing source-specific session folders, descriptively named images, manifests, traces, and one consolidated `REPORT.md`. The report must include:
+For each image, read [image-analysis-contract.md](references/image-analysis-contract.md). Analyze visible content, purpose, intent, composition, lighting, apparent camera treatment, art direction, graphics, color, effectiveness, reusable principles, nonessential details, conceptual recreation, and original-generation prompts. Separate observed, inferred, and unknown facts. Never invent identities, equipment, focal lengths, fonts, LUTs, or software.
 
-- totals for sources, accepted images, rejected frames, and WhatsApp recommendations;
-- a Markdown summary table by account/source;
-- a Markdown image table containing every accepted image, preview, filename, visible-content description, and WhatsApp rating;
-- a ranked section of images that may work well in a WhatsApp conversation, with reasons;
-- no more than the requested number of WhatsApp recommendations, ranked by rating;
-- honest partial/failure notes and no unsupported claims.
+## Acquire and process video
 
-When finished, tell the user the collection folder, report path, captured/rejected counts, and top WhatsApp candidates. Link the local report and folder when the host supports local file links.
+Read [video-analysis-contract.md](references/video-analysis-contract.md). Run `doctor-video` before enabling video. FFmpeg and FFprobe are required; Whisper is optional.
 
-## Selection judgment
+Use visible Edge navigation to identify candidate video pages and source adapters to normalize their platform/provenance while keeping acquisition separate from analysis. `import-video` accepts an authorized local file or a direct accessible HTTP(S) media URL. Do not export Edge cookies, copy browser profiles, retain secrets, derive hidden expiring URLs, bypass DRM, or defeat platform controls. If the original cannot be obtained within those boundaries, record a partial error and continue other assets.
 
-Rate WhatsApp usefulness from visible evidence only:
+The video pipeline must:
 
-- `5`: immediately understandable, expressive, well composed, and likely to start or enrich a conversation at phone size.
-- `4`: strong and shareable with a clear subject or mood.
-- `3`: usable with context, but ordinary, busy, or less legible on a phone.
-- `2`: weak crop, unclear subject, repetitive, or unlikely to add much.
-- `1`: misleading, sensitive, irrelevant, unusable, or should not be shared.
+- enforce configurable `maxVideosPerSource` (default 10);
+- enforce a configurable input/download size ceiling (default 1 GiB);
+- preserve and hash the original;
+- probe duration, resolution, FPS, codecs, and audio;
+- select the opening frame, hard scene changes, and softer meaningful changes after a configurable gap;
+- deduplicate candidates using SHA-256 plus structural and mean-color fingerprints;
+- create ordered scene directories, representative keyframes, and twin Markdown files;
+- extract audio when enabled and degrade gracefully when transcription is unavailable;
+- write `metadata.json` and `video.md` with explicit parent/scene/frame relationships;
+- resume by content hash instead of reprocessing a completed video.
 
-Ratings are suggestions, not permission to share. Prefer respectful, non-sensitive images. Avoid recommending content containing private data, minors in sensitive contexts, account-security UI, or material whose conversational use would be misleading.
+After inspecting the representative frames and available audio/transcript, use `analyze-video --analysis-file` to create the deep multimodal synthesis. The result must let another agent reconstruct what happens, in what order, how it communicates, what is essential, and how to reinterpret the creative logic without copying the reference.
 
-## Safety and stopping
+## Backfill and resume
 
-- Keep the desktop unlocked and the selected Edge profile signed in. Never request passwords, export cookies, or copy profile data.
-- Stop on CAPTCHA, checkpoint, rate limit, consent change, account-security prompt, destructive control, or ambiguous target identity. Do not bypass them.
+Run `backfill --root COLLECTION` on legacy collections. It scans source manifests, creates missing image twins, adds dimensions and analysis state, and rebuilds indexes without scraping again. It skips existing analyzed assets unless `--force` is explicitly used. Deepen `basic` assets with `analyze-image` or `analyze-video`.
+
+Exact hashes prevent duplicate storage across the collection. Video imports resume by hash. Preserve partial manifests, errors, valid media, and completed analysis across reruns.
+
+## Complete the knowledge base
+
+Run `report --root COLLECTION` for the legacy visual gallery and `index --root COLLECTION` for the unified inventory. Verify:
+
+- every retained image/keyframe has a same-basename `.md`;
+- `content-manifest.json` contains source, type, paths, hashes, analysis state, parents, scenes, timestamps, duplicates, and structured errors;
+- `reports/images-index.md`, `videos-index.md`, and `run-report.md` link to real files;
+- coverage distinguishes `basic` from `analyzed` rather than overstating completion;
+- errors contain asset, stage, source, retryability, and cause;
+- generation guidance extracts abstract creative principles and never requests literal copying.
+
+Do not stop after downloading. Continue through organization, analysis, manifests, and reporting for every enabled media type.
+
+## Safety and quality boundaries
+
+- Warn once that live Windows UI work takes focus and may move the pointer.
+- Stop for CAPTCHA, checkpoints, account-security prompts, consent changes, rate limits, destructive controls, or ambiguous identity.
 - Collect only content the user is authorized to access and retain.
-- Preserve `manifest.json`, `run.ndjson`, screenshots, and partial media after failures.
-- Close only the Edge window created for the session unless `--keep-open` was requested.
+- Close only the Edge window created by the session unless `--keep-open` was requested.
+- Prefer respectful, non-sensitive reference material. Ratings and creative analysis are not permission to republish.
+- Analyze deeply only after cheap metadata, scene selection, and redundancy filtering. Do not send or inspect hundreds of equivalent frames.

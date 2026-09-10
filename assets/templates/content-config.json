@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "website": null,
+    "instagram": null,
+    "facebook": null,
+    "other": [],
+    "discoverSources": false
+  },
+  "media": { "images": true, "videos": false },
+  "video": {
+    "enabled": false,
+    "maxVideosPerSource": 10,
+    "maxDownloadBytes": 1073741824,
+    "sceneDetection": {
+      "enabled": true,
+      "hardThreshold": 0.32,
+      "softThreshold": 0.08,
+      "meaningfulChangeGapSeconds": 8
+    },
+    "keyframes": {
+      "deduplicate": true,
+      "perceptualHammingThreshold": 6,
+      "maxPerVideo": 200
+    },
+    "audio": { "extract": true, "transcribe": false }
+  },
+  "analysis": {
+    "imageDescriptions": true,
+    "videoDescriptions": true,
+    "generationGuidance": true
+  },
+  "output": { "root": "content-intelligence" }
+}

@@ -24,3 +24,9 @@ The runtime uses a real Edge process and Win32 input. It does not inspect the DO
 If a run repeatedly loses focus or captures black frames, move it to a dedicated unlocked Windows worker rather than increasing retries.
 
 For an isolated setup, follow [vm-setup.md](vm-setup.md).
+
+## Optional video runtime
+
+Image-only collection does not require additional media tools. Video processing requires compatible `ffmpeg` and `ffprobe` executables, either available on `PATH` or supplied explicitly with `--ffmpeg-path` and `--ffprobe-path`. Check them before a run with `doctor-video`; the diagnostic records the resolved version strings without changing the desktop.
+
+Whisper CLI is optional. When transcription is requested but Whisper is unavailable, the video, metadata, scenes, keyframes, and extracted audio remain valid, and the missing dependency is recorded as a retryable partial error. Never place credential, cookie, or browser-profile paths in media-tool arguments or reports.

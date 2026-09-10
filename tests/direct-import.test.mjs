@@ -10,7 +10,11 @@ test("direct import saves supported still images and rejects collection-wide dup
   try {
     const collectionRoot = path.join(temporary, "collection");
     const inputPath = path.join(temporary, "principal.png");
-    await fs.writeFile(inputPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]));
+    const bytes = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes);
+    bytes.writeUInt32BE(120, 16);
+    bytes.writeUInt32BE(80, 20);
+    await fs.writeFile(inputPath, bytes);
     const common = {
       rootValue: collectionRoot,
       inputPath,
@@ -33,6 +37,7 @@ test("direct import saves supported still images and rejects collection-wide dup
       metadata: { ...common.metadata, name: "fachada repetida del sitio" },
     });
     assert.equal(first.status, "saved");
+    await fs.access(first.imagePath.replace(/\.png$/i, ".md"));
     assert.equal(second.status, "duplicate");
     assert.equal(second.report.sources, 1);
     assert.equal(second.report.attempts, 2);

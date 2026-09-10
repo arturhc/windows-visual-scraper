@@ -9,6 +9,7 @@ import {
   parseCli,
   readBoolean,
   readInteger,
+  readNumber,
   requireOption,
   resolveOutputDir,
 } from "./lib/args.mjs";
@@ -25,12 +26,18 @@ import {
   startAgentSession,
   statusAgentSession,
 } from "./lib/agent-session.mjs";
+import { analyzeImageAsset, backfillImageKnowledge } from "./lib/backfill.mjs";
 import { closeBrowserSession, openBrowserSession } from "./lib/browser-session.mjs";
+import { buildKnowledgeReports } from "./lib/content-manifest.mjs";
+import { loadContentConfig, writeContentConfig } from "./lib/content-config.mjs";
 import { importDirectImage } from "./lib/direct-import.mjs";
+import { doctorMediaTools } from "./lib/media-tools.mjs";
 import { generateReport } from "./lib/report.mjs";
 import { capturePage } from "./lib/runner.mjs";
 import { helperPath, windowsBrowser } from "./lib/windows-bridge.mjs";
 import { listPresets, loadWorkflow, validateWorkflow } from "./lib/workflow-schema.mjs";
+import { listSourceAdapters } from "./lib/source-adapters.mjs";
+import { analyzeVideoAsset, importAndProcessVideo } from "./lib/video-pipeline.mjs";
 
 const HELP = `Windows Visual Image Scraper
 
@@ -41,21 +48,39 @@ Commands:
   doctor [--capture-test --confirm-live-ui]
   list-presets
   validate-workflow --all | --workflow PATH
+  init-config --output PATH
+  validate-config [--config PATH]
+  list-source-adapters
+  doctor-video [--ffmpeg-path PATH] [--ffprobe-path PATH] [--whisper-path PATH]
   capture-page --url URL [--shots N] [--dry-run | --confirm-live-ui]
   start (--preset NAME | --workflow PATH) --url URL [--count N] [--collection NAME] [--target-label NAME] [--report-language en|es] [--dry-run | --confirm-live-ui]
   shot --session PATH [--context STAGE_ID|collection] [--label TEXT]
   act --session PATH --context STAGE_ID|collection (--click X,Y | --key KEY | --wait-ms N | --done)
-  save --session PATH --input PNG (--crop-box L,T,R,B | --heuristic | --full-window) --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT
+  save --session PATH --input PNG (--crop-box L,T,R,B | --heuristic | --full-window) --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT [--analysis-file JSON]
   reject --session PATH --input PNG --reason TEXT [--media-type TEXT]
   status --session PATH
   finish --session PATH [--status complete|partial|failed] [--summary TEXT] [--reason TEXT]
-  import-image --root PATH (--input IMAGE | --url IMAGE_URL) --source-page URL --target-label TEXT --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT
+  import-image --root PATH (--input IMAGE | --url IMAGE_URL) --source-page URL --target-label TEXT --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT [--analysis-file JSON]
+  analyze-image --root PATH --image PATH --analysis-file JSON
+  backfill --root PATH [--force]
+  import-video --root PATH (--input VIDEO | --url VIDEO_URL) --source-page URL --name TEXT [--config PATH] [--analysis-file JSON] [--ffmpeg-path PATH] [--ffprobe-path PATH]
+  analyze-video --root PATH --video-root PATH --analysis-file JSON
+  index --root PATH
   report --root PATH [--title TEXT] [--language en|es] [--max-recommendations N]
 
 Use --dry-run before any live UI run. See references/cli.md for all options.`;
 
 function print(value) {
   process.stdout.write(`${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
+}
+
+async function readJsonFile(value, label = "JSON file") {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(await fs.readFile(path.resolve(value), "utf8"));
+  } catch (error) {
+    throw new Error(`${label} could not be read: ${error.message}`);
+  }
 }
 
 function runtimeOptions(options, workflow) {
@@ -131,6 +156,25 @@ async function validateCommand(options) {
   const raw = JSON.parse(await fs.readFile(workflowPath, "utf8"));
   validateWorkflow(raw);
   print({ valid: true, workflow: raw.name });
+}
+
+async function initConfigCommand(options) {
+  print(await writeContentConfig(requireOption(options, "output")));
+}
+
+async function validateConfigCommand(options) {
+  const config = await loadContentConfig(typeof options.config === "string" ? options.config : undefined);
+  print({ valid: true, config });
+}
+
+async function doctorVideoCommand(options) {
+  const report = await doctorMediaTools({
+    ffmpegPath: typeof options["ffmpeg-path"] === "string" ? options["ffmpeg-path"] : undefined,
+    ffprobePath: typeof options["ffprobe-path"] === "string" ? options["ffprobe-path"] : undefined,
+    whisperPath: typeof options["whisper-path"] === "string" ? options["whisper-path"] : undefined,
+  });
+  print(report);
+  if (!report.ok) process.exitCode = 1;
 }
 
 async function captureCommand(options) {
@@ -233,6 +277,7 @@ async function saveCommand(options) {
       whatsappReason: requireOption(options, "whatsapp-reason"),
       tags: typeof options.tags === "string" ? options.tags.split(",") : [],
     },
+    analysis: await readJsonFile(typeof options["analysis-file"] === "string" ? options["analysis-file"] : undefined, "Image analysis file"),
   }));
 }
 
@@ -287,6 +332,71 @@ async function importImageCommand(options) {
       whatsappReason: requireOption(options, "whatsapp-reason"),
       tags: typeof options.tags === "string" ? options.tags.split(",") : [],
     },
+    analysis: await readJsonFile(typeof options["analysis-file"] === "string" ? options["analysis-file"] : undefined, "Image analysis file"),
+  }));
+}
+
+async function analyzeImageCommand(options) {
+  print(await analyzeImageAsset({
+    rootValue: requireOption(options, "root"),
+    imagePath: requireOption(options, "image"),
+    analysis: await readJsonFile(requireOption(options, "analysis-file"), "Image analysis file"),
+  }));
+}
+
+async function backfillCommand(options) {
+  print(await backfillImageKnowledge(requireOption(options, "root"), { force: readBoolean(options.force) }));
+}
+
+async function importVideoCommand(options) {
+  const videoUrl = typeof options.url === "string" ? assertHttpUrl(options.url) : undefined;
+  const inputPath = typeof options.input === "string" ? options.input : undefined;
+  const sourcePage = typeof options["source-page"] === "string" ? assertHttpUrl(options["source-page"]) : videoUrl;
+  if (inputPath && !sourcePage) throw new Error("Provide --source-page for local video provenance.");
+  const configFile = typeof options.config === "string" ? options.config : undefined;
+  const override = {
+    media: { videos: true },
+    video: {
+      enabled: true,
+      ...(options["max-videos-per-source"] != null ? { maxVideosPerSource: readInteger(options["max-videos-per-source"], 10, { min: 1, max: 100 }) } : {}),
+      ...(options["max-download-bytes"] != null ? { maxDownloadBytes: readInteger(options["max-download-bytes"], 1073741824, { min: 1048576, max: 10737418240 }) } : {}),
+      sceneDetection: {
+        ...((options["hard-scene-threshold"] ?? options["scene-threshold"]) != null ? { hardThreshold: readNumber(options["hard-scene-threshold"] ?? options["scene-threshold"], 0.32, { min: 0.01, max: 1 }) } : {}),
+        ...(options["soft-scene-threshold"] != null ? { softThreshold: readNumber(options["soft-scene-threshold"], 0.08, { min: 0, max: 1 }) } : {}),
+        ...(options["meaningful-change-gap-seconds"] != null ? { meaningfulChangeGapSeconds: readNumber(options["meaningful-change-gap-seconds"], 8, { min: 1, max: 300 }) } : {}),
+      },
+      keyframes: {
+        ...(options["max-keyframes"] != null ? { maxPerVideo: readInteger(options["max-keyframes"], 200, { min: 1, max: 1000 }) } : {}),
+        ...(options["perceptual-hamming-threshold"] != null ? { perceptualHammingThreshold: readInteger(options["perceptual-hamming-threshold"], 6, { min: 0, max: 64 }) } : {}),
+      },
+      audio: {
+        ...(options["no-audio"] != null ? { extract: !readBoolean(options["no-audio"], false) } : {}),
+        ...(options.transcribe != null ? { transcribe: readBoolean(options.transcribe, false) } : {}),
+      },
+    },
+  };
+  const config = await loadContentConfig(configFile, override);
+  print(await importAndProcessVideo({
+    rootValue: requireOption(options, "root"),
+    inputPath,
+    videoUrl,
+    sourcePage,
+    sourcePlatform: typeof options.platform === "string" ? options.platform : undefined,
+    sourceAccount: typeof options["source-account"] === "string" ? options["source-account"] : undefined,
+    name: requireOption(options, "name"),
+    config,
+    analysis: await readJsonFile(typeof options["analysis-file"] === "string" ? options["analysis-file"] : undefined, "Video analysis file"),
+    ffmpegPath: typeof options["ffmpeg-path"] === "string" ? options["ffmpeg-path"] : undefined,
+    ffprobePath: typeof options["ffprobe-path"] === "string" ? options["ffprobe-path"] : undefined,
+    whisperPath: typeof options["whisper-path"] === "string" ? options["whisper-path"] : undefined,
+  }));
+}
+
+async function analyzeVideoCommand(options) {
+  print(await analyzeVideoAsset({
+    rootValue: requireOption(options, "root"),
+    videoRoot: requireOption(options, "video-root"),
+    analysis: await readJsonFile(requireOption(options, "analysis-file"), "Video analysis file"),
   }));
 }
 
@@ -296,6 +406,10 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === "doctor") return doctor(options);
   if (command === "list-presets") return print(await listPresets());
   if (command === "validate-workflow") return validateCommand(options);
+  if (command === "init-config") return initConfigCommand(options);
+  if (command === "validate-config") return validateConfigCommand(options);
+  if (command === "list-source-adapters") return print(listSourceAdapters());
+  if (command === "doctor-video") return doctorVideoCommand(options);
   if (command === "capture-page") return captureCommand(options);
   if (command === "start" || command === "run") return startCommand(options);
   if (command === "shot") return shotCommand(options);
@@ -305,6 +419,11 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === "status") return print(await statusAgentSession(sessionValue(options)));
   if (command === "finish") return finishCommand(options);
   if (command === "import-image") return importImageCommand(options);
+  if (command === "analyze-image") return analyzeImageCommand(options);
+  if (command === "backfill") return backfillCommand(options);
+  if (command === "import-video") return importVideoCommand(options);
+  if (command === "analyze-video") return analyzeVideoCommand(options);
+  if (command === "index") return print(await buildKnowledgeReports(requireOption(options, "root")));
   if (command === "report") return reportCommand(options);
   throw new Error(`Unknown command: ${command}\n\n${HELP}`);
 }

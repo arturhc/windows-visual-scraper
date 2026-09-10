@@ -9,6 +9,7 @@ The CLI must run inside the guest operating system. Running it on the host while
 - Windows 11 with a persistent virtual disk.
 - Hyper-V, VMware, or VirtualBox with a normal graphical console.
 - Microsoft Edge, Git, Node.js 20 or newer, and Codex or another image-capable code agent installed in the guest.
+- FFmpeg/FFprobe when video processing is enabled; Whisper CLI only when transcription is required.
 - A fixed display resolution such as 1920x1080 and 100% display scaling.
 - A dedicated Edge profile signed in manually by the user.
 - A shared output directory that does not expose the Edge profile, cookies, or credential stores.
@@ -33,6 +34,7 @@ $skillDirectory = Join-Path $env:USERPROFILE ".agents\skills\windows-visual-imag
 git clone https://github.com/arturhc/windows-visual-scraper.git $skillDirectory
 npm ci --prefix $skillDirectory
 node "$skillDirectory\scripts\image-scraper.mjs" doctor
+node "$skillDirectory\scripts\image-scraper.mjs" doctor-video # optional; required for video jobs
 ```
 
 No separate AI API key is needed. The agent running inside the guest inspects local screenshots with its existing model session; the bundled scripts never contact an AI service.

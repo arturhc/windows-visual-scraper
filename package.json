@@ -1,9 +1,9 @@
 {
   "name": "windows-visual-image-scraper",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Agent-native Codex skill for curated social image collection and Markdown reporting on Windows.",
+  "description": "Agent-native creative content intelligence for image and video references on Windows.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -18,7 +18,9 @@
     "windows",
     "edge",
     "visual-automation",
-    "image-scraper"
+    "image-scraper",
+    "content-intelligence",
+    "video-analysis"
   ],
   "engines": {
     "node": ">=20"

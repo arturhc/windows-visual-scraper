@@ -19,6 +19,14 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+function testPng(width = 100, height = 60) {
+  const bytes = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes);
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
+
 test("ratio parsers accept normalized coordinates and reject invalid crops", () => {
   assert.deepEqual(parseRatioPair("0.25,0.75"), { xRatio: 0.25, yRatio: 0.75 });
   assert.deepEqual(parseCropBox("0.1,0.2,0.8,0.9"), {
@@ -134,7 +142,7 @@ test("save writes a descriptively named item and editorial metadata", async () =
     const manifestPath = path.join(runRoot, "manifest.json");
     const tracePath = path.join(runRoot, "run.ndjson");
     const sessionPath = path.join(runRoot, "session.json");
-    await fs.writeFile(inputPath, "fake-png");
+    await fs.writeFile(inputPath, testPng());
     await fs.writeFile(tracePath, "");
     await fs.writeFile(manifestPath, JSON.stringify({ status: "running", items: [], rejectedFrames: [] }));
     await fs.writeFile(sessionPath, JSON.stringify({
@@ -167,6 +175,9 @@ test("save writes a descriptively named item and editorial metadata", async () =
     const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
     assert.equal(manifest.items[0].whatsapp.rating, 4);
     assert.equal(manifest.items[0].displayName, "orange sunset over calm water");
+    assert.equal(manifest.items[0].width, 100);
+    assert.equal(manifest.items[0].analysis.status, "basic");
+    await fs.access(path.join(runRoot, manifest.items[0].analysis.path));
   } finally {
     await fs.rm(runRoot, { recursive: true, force: true });
   }

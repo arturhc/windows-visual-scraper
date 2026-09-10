@@ -3,6 +3,7 @@ import path from "node:path";
 import { normalizeSavedImageMetadata } from "./agent-session.mjs";
 import { createRunArtifacts, findDuplicateSha256, sha256File } from "./artifacts.mjs";
 import { generateReport } from "./report.mjs";
+import { createImageKnowledgeAsset } from "./knowledge-assets.mjs";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const PLATFORMS = new Set(["facebook", "instagram", "web"]);
@@ -49,6 +50,7 @@ export async function importDirectImage({
   reportLanguage = "en",
   maxRecommendations = 5,
   metadata,
+  analysis,
 }) {
   const collectionRoot = path.resolve(rootValue);
   const resolvedPlatform = String(platform).toLowerCase();
@@ -97,7 +99,7 @@ export async function importDirectImage({
 
     const finalPath = path.join(artifacts.directories.media, `001-${normalizedMetadata.fileStem}${extension}`);
     await fs.rename(candidatePath, finalPath);
-    artifacts.manifest.items.push({
+    const item = {
       index: 1,
       path: portable(artifacts.directories.root, finalPath),
       sha256,
@@ -109,7 +111,15 @@ export async function importDirectImage({
       description: normalizedMetadata.description,
       tags: normalizedMetadata.tags,
       whatsapp: normalizedMetadata.whatsapp,
+    };
+    await createImageKnowledgeAsset({
+      imagePath: finalPath,
+      item,
+      manifest: artifacts.manifest,
+      runRoot: artifacts.directories.root,
+      analysis,
     });
+    artifacts.manifest.items.push(item);
     await artifacts.log("direct-image-imported", { path: finalPath, sha256, source: imported.source });
     await artifacts.writeManifest({
       status: "complete",

@@ -1,0 +1,23 @@
+{
+  "confidence": "high",
+  "summary": "Resumen conciso del activo.",
+  "detailedVisualDescription": "Descripción completa de sujetos, objetos, entorno, distribución, color, iluminación, materiales, fondo, postura, producto, elementos gráficos y texto visible.",
+  "purpose": "Propósito aparente de la pieza.",
+  "messageAndIntent": "Mensaje, emoción, argumento creativo y comprensión esperada.",
+  "composition": "Encuadre, jerarquía, punto focal, perspectiva, profundidad y balance.",
+  "lighting": "Observación e inferencia prudente de fuente, dirección, dureza, contraste y temperatura.",
+  "cameraPhotography": "Tipo de toma, ángulo, perspectiva, profundidad de campo y focal aparente sin inventar equipo.",
+  "artDirection": "Escenario, props, decoración, styling, materiales y estética de marca.",
+  "graphicDesignTypography": "Jerarquía, alineación, contraste, overlays, CTA y estilo tipográfico aparente.",
+  "colorTreatment": "Paleta, saturación, contraste, temperatura, grading y look aparente.",
+  "effectiveness": "Mecanismos creativos que hacen efectiva la pieza.",
+  "reusableElements": ["Principio creativo abstracto reutilizable."],
+  "nonEssentialElements": ["Detalle accidental que puede cambiar."],
+  "recreationRecipe": "Cómo producir una pieza nueva con la misma lógica sin copiar la ejecución.",
+  "generationPrompts": ["Prompt para una ejecución original inspirada en estructura, intención y técnica."],
+  "variations": ["Variación conceptual posible."],
+  "observations": "Notas adicionales.",
+  "observed": ["Hecho directamente visible."],
+  "inferred": ["Interpretación etiquetada como aparente o probable."],
+  "unknown": ["Dato técnico no confirmable." ]
+}

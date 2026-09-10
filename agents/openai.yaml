@@ -1,6 +1,6 @@
 interface:
-  display_name: "Windows Visual Image Scraper"
-  short_description: "Collect social images and build visual reports"
-  default_prompt: "Use $windows-visual-image-scraper to collect images from these Facebook or Instagram profiles and deliver a structured folder with a Markdown report."
+  display_name: "Creative Content Intelligence"
+  short_description: "Mine and analyze creative image and video references"
+  default_prompt: "Use $windows-visual-image-scraper to turn these brand sources into a structured, traceable creative-reference knowledge base."
 policy:
   allow_implicit_invocation: true

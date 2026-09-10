@@ -3,6 +3,7 @@ import path from "node:path";
 import { createRunArtifacts, findDuplicateSha256, sha256File, slugify } from "./artifacts.mjs";
 import { closeBrowserSession, openBrowserSession, sleep } from "./browser-session.mjs";
 import { generateReport } from "./report.mjs";
+import { createImageKnowledgeAsset } from "./knowledge-assets.mjs";
 import { SAFE_KEYS } from "./workflow-schema.mjs";
 import { windowsBrowser } from "./windows-bridge.mjs";
 
@@ -440,7 +441,7 @@ async function writeManifest(session, manifest) {
   await writeJsonAtomic(session.manifestPath, manifest);
 }
 
-export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox, metadata }) {
+export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox, metadata, analysis }) {
   const session = await loadAgentSession(sessionValue, { active: true });
   const normalizedMetadata = normalizeSavedImageMetadata(metadata);
   const sourcePath = await fs.realpath(path.resolve(inputPath));
@@ -492,7 +493,7 @@ export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox,
   const index = manifest.items.length + 1;
   const finalPath = path.join(session.directories.media, `${String(index).padStart(3, "0")}-${normalizedMetadata.fileStem}.png`);
   await fs.rename(candidatePath, finalPath);
-  manifest.items.push({
+  const item = {
     index,
     path: portable(session.runRoot, finalPath),
     sha256: hash,
@@ -502,7 +503,9 @@ export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox,
     description: normalizedMetadata.description,
     tags: normalizedMetadata.tags,
     whatsapp: normalizedMetadata.whatsapp,
-  });
+  };
+  await createImageKnowledgeAsset({ imagePath: finalPath, item, manifest, runRoot: session.runRoot, analysis });
+  manifest.items.push(item);
   await writeManifest(session, manifest);
   session.counters.saves += 1;
   session.contextActions.collection = 0;

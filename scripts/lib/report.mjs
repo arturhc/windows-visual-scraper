@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { findManifestFiles } from "./artifacts.mjs";
+import { buildKnowledgeReports } from "./content-manifest.mjs";
 
 const COPY = {
   en: {
@@ -209,6 +210,7 @@ export async function generateReport(rootValue, { title, language, maxRecommenda
 
   const reportPath = path.join(root, "REPORT.md");
   await fs.writeFile(reportPath, `${lines.join("\n")}\n`, "utf8");
+  const knowledgeReports = await buildKnowledgeReports(root);
   return {
     reportPath,
     language: locale,
@@ -217,5 +219,6 @@ export async function generateReport(rootValue, { title, language, maxRecommenda
     captured: items.length,
     rejected,
     recommended: recommended.length,
+    knowledgeReports,
   };
 }
