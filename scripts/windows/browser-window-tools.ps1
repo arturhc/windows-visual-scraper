@@ -61,10 +61,10 @@ namespace VisualImageScraper {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessage(IntPtr hWnd, uint message, UIntPtr wParam, IntPtr lParam);
   }
 }
-"@
+"@ | Out-Null
   }
-  Add-Type -AssemblyName System.Drawing
-  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing | Out-Null
+  Add-Type -AssemblyName System.Windows.Forms | Out-Null
 }
 
 function Get-EdgeWindows {
@@ -137,7 +137,7 @@ function Send-WindowKey([long]$WindowHandle, [int]$TargetProcessId, [string]$Win
 
 function Click-WindowPoint([long]$WindowHandle, [int]$TargetProcessId, [int]$OffsetX, [int]$OffsetY, [int]$Times) {
   Focus-Window $WindowHandle $TargetProcessId
-  $bounds = Get-WindowBounds $WindowHandle
+  $bounds = @(Get-WindowBounds $WindowHandle)[-1]
   if ($OffsetX -lt 0 -or $OffsetX -ge $bounds.width -or $OffsetY -lt 0 -or $OffsetY -ge $bounds.height) {
     throw "Click point is outside the window: ($OffsetX,$OffsetY)."
   }
@@ -160,7 +160,7 @@ function Click-WindowPoint([long]$WindowHandle, [int]$TargetProcessId, [int]$Off
 function Save-WindowScreenshot([long]$WindowHandle, [string]$TargetPath) {
   Ensure-NativeTypes
   [VisualImageScraper.NativeMethods]::SetProcessDPIAware() | Out-Null
-  $bounds = Get-WindowBounds $WindowHandle
+  $bounds = @(Get-WindowBounds $WindowHandle)[-1]
   $directory = Split-Path -Parent $TargetPath
   if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
   $virtual = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -169,11 +169,11 @@ function Save-WindowScreenshot([long]$WindowHandle, [string]$TargetPath) {
   $right = [Math]::Min($bounds.right, $virtual.Right)
   $bottom = [Math]::Min($bounds.bottom, $virtual.Bottom)
   if ($right -le $left -or $bottom -le $top) { throw 'Window is outside the visible desktop.' }
-  $bitmap = New-Object System.Drawing.Bitmap($bounds.width, $bounds.height)
+  $bitmap = [System.Drawing.Bitmap]::new([int]$bounds.width, [int]$bounds.height)
   $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
   try {
     $graphics.Clear([System.Drawing.Color]::Black)
-    $size = New-Object System.Drawing.Size($right - $left, $bottom - $top)
+    $size = [System.Drawing.Size]::new([int]($right - $left), [int]($bottom - $top))
     $graphics.CopyFromScreen($left, $top, $left - $bounds.left, $top - $bounds.top, $size)
     $bitmap.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png)
   } finally { $graphics.Dispose(); $bitmap.Dispose() }
@@ -238,7 +238,8 @@ function Save-HeuristicCrop([string]$SourcePath, [string]$TargetPath, [double]$R
     if ($width -lt 40 -or $height -lt 40) { throw 'Detected crop is too small.' }
     $directory = Split-Path -Parent $TargetPath
     if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
-    $crop = $source.Clone((New-Object System.Drawing.Rectangle($left, $top, $width, $height)), $source.PixelFormat)
+    $rectangle = [System.Drawing.Rectangle]::new([int]$left, [int]$top, [int]$width, [int]$height)
+    $crop = $source.Clone($rectangle, $source.PixelFormat)
     try { $crop.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $crop.Dispose() }
   } finally { $source.Dispose() }
 }
@@ -259,7 +260,8 @@ function Save-RatioCrop([string]$SourcePath, [string]$TargetPath, [double]$LeftR
     if ($width -lt 40 -or $height -lt 40) { throw 'Ratio crop is too small.' }
     $directory = Split-Path -Parent $TargetPath
     if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
-    $crop = $source.Clone((New-Object System.Drawing.Rectangle($left, $top, $width, $height)), $source.PixelFormat)
+    $rectangle = [System.Drawing.Rectangle]::new([int]$left, [int]$top, [int]$width, [int]$height)
+    $crop = $source.Clone($rectangle, $source.PixelFormat)
     try { $crop.Save($TargetPath, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $crop.Dispose() }
   } finally { $source.Dispose() }
 }

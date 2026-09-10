@@ -139,6 +139,17 @@ export function validateWorkflow(workflow) {
   if (collection.advance.mode === "agent" && !String(collection.advance.goal || "").trim()) {
     throw new Error("workflow.collection.advance.goal is required for agent mode.");
   }
+  if (collection.advance.mode !== "agent" && collection.advance.allowedKeys != null) {
+    throw new Error("workflow.collection.advance.allowedKeys is supported only for agent mode.");
+  }
+  if (collection.advance.allowedKeys != null && !Array.isArray(collection.advance.allowedKeys)) {
+    throw new Error("workflow.collection.advance.allowedKeys must be an array.");
+  }
+  for (const key of collection.advance.allowedKeys || []) {
+    if (!SAFE_KEYS.has(String(key).toUpperCase())) {
+      throw new Error(`workflow.collection.advance allows unsupported key: ${key}`);
+    }
+  }
   if (collection.advance.maxSteps != null && (!Number.isInteger(collection.advance.maxSteps) || collection.advance.maxSteps < 1 || collection.advance.maxSteps > 10)) {
     throw new Error("workflow.collection.advance.maxSteps must be an integer from 1 through 10.");
   }

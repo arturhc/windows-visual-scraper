@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   assertEdgeProfile,
   assertHttpUrl,
@@ -23,6 +25,8 @@ import {
   startAgentSession,
   statusAgentSession,
 } from "./lib/agent-session.mjs";
+import { closeBrowserSession, openBrowserSession } from "./lib/browser-session.mjs";
+import { importDirectImage } from "./lib/direct-import.mjs";
 import { generateReport } from "./lib/report.mjs";
 import { capturePage } from "./lib/runner.mjs";
 import { helperPath, windowsBrowser } from "./lib/windows-bridge.mjs";
@@ -34,7 +38,7 @@ Codex or another image-capable code agent is the visual reasoning engine.
 The bundled scripts do not call an AI API and do not require a separate API key.
 
 Commands:
-  doctor
+  doctor [--capture-test --confirm-live-ui]
   list-presets
   validate-workflow --all | --workflow PATH
   capture-page --url URL [--shots N] [--dry-run | --confirm-live-ui]
@@ -45,7 +49,8 @@ Commands:
   reject --session PATH --input PNG --reason TEXT [--media-type TEXT]
   status --session PATH
   finish --session PATH [--status complete|partial|failed] [--summary TEXT] [--reason TEXT]
-  report --root PATH [--title TEXT] [--language en|es]
+  import-image --root PATH (--input IMAGE | --url IMAGE_URL) --source-page URL --target-label TEXT --name TEXT --description TEXT --whatsapp-rating 1-5 --whatsapp-reason TEXT
+  report --root PATH [--title TEXT] [--language en|es] [--max-recommendations N]
 
 Use --dry-run before any live UI run. See references/cli.md for all options.`;
 
@@ -70,7 +75,9 @@ function assertWindows() {
   if (process.platform !== "win32") throw new Error("Live browser control is supported only on Windows.");
 }
 
-async function doctor() {
+async function doctor(options = {}) {
+  const captureRequested = readBoolean(options["capture-test"]);
+  if (captureRequested) assertLiveUiAuthorized(options);
   const report = {
     platform: process.platform,
     node: process.version,
@@ -79,6 +86,7 @@ async function doctor() {
     agentNative: true,
     aiApiRequired: false,
     windowsRuntime: null,
+    captureTest: captureRequested ? { ok: false, attempted: false } : { requested: false },
   };
   try { await fs.access(helperPath); report.helperReadable = true; } catch {}
   if (process.platform === "win32" && report.helperReadable) {
@@ -86,6 +94,29 @@ async function doctor() {
     catch (error) { report.windowsRuntime = { ok: false, error: error.message }; }
   }
   report.ok = report.platform === "win32" && report.helperReadable && !report.windowsRuntime?.error;
+  if (captureRequested && report.ok) {
+    assertWindows();
+    const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "visual-image-scraper-doctor-"));
+    let browserSession;
+    try {
+      browserSession = await openBrowserSession("about:blank", {
+        profile: assertEdgeProfile(typeof options.profile === "string" ? options.profile : "Default"),
+        launchWaitMs: readInteger(options["launch-wait-ms"], 1_500, { min: 0, max: 60_000 }),
+        fullscreen: false,
+      });
+      const screenshotPath = path.join(temporaryRoot, "capture-test.png");
+      await windowsBrowser.screenshot(browserSession.target, screenshotPath);
+      const stats = await fs.stat(screenshotPath);
+      if (stats.size === 0) throw new Error("Capture smoke test produced an empty PNG.");
+      report.captureTest = { ok: true, attempted: true, bytes: stats.size };
+    } catch (error) {
+      report.captureTest = { ok: false, attempted: true, error: error.message };
+      report.ok = false;
+    } finally {
+      await closeBrowserSession(browserSession, { keepOpen: false });
+      await fs.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }
   print(report);
   if (!report.ok) process.exitCode = 1;
 }
@@ -124,6 +155,7 @@ async function startCommand(options) {
   const targetLabel = typeof options["target-label"] === "string" ? options["target-label"].trim() : deriveTargetLabel(url);
   const platform = typeof options.platform === "string" ? options.platform.trim().toLowerCase() : inferPlatform(url);
   const reportLanguage = typeof options["report-language"] === "string" ? options["report-language"].trim() : "en";
+  const maxRecommendations = readInteger(options["max-recommendations"], 5, { min: 0, max: 100 });
   const plan = {
     command: "start",
     workflow: loaded.workflow.name,
@@ -134,6 +166,7 @@ async function startCommand(options) {
     targetLabel,
     platform,
     reportLanguage,
+    maxRecommendations,
     outputDir: resolveOutputDir(options),
     options: runtimeOptions(options, loaded.workflow),
     reasoningEngine: "host-agent",
@@ -226,13 +259,41 @@ async function reportCommand(options) {
   const root = requireOption(options, "root");
   const title = typeof options.title === "string" ? options.title : undefined;
   const language = typeof options.language === "string" ? options.language : undefined;
-  print(await generateReport(root, { title, language }));
+  const maxRecommendations = readInteger(options["max-recommendations"], 5, { min: 0, max: 100 });
+  print(await generateReport(root, { title, language, maxRecommendations }));
+}
+
+async function importImageCommand(options) {
+  const inputPath = typeof options.input === "string" ? options.input : undefined;
+  const imageUrl = typeof options.url === "string" ? assertHttpUrl(options.url) : undefined;
+  const sourcePage = typeof options["source-page"] === "string"
+    ? assertHttpUrl(options["source-page"])
+    : imageUrl;
+  if (!sourcePage) throw new Error("--source-page is required when importing a local image file.");
+  print(await importDirectImage({
+    rootValue: requireOption(options, "root"),
+    inputPath,
+    imageUrl,
+    sourcePage,
+    collectionName: typeof options.collection === "string" ? options.collection : undefined,
+    targetLabel: requireOption(options, "target-label"),
+    platform: typeof options.platform === "string" ? options.platform : "web",
+    reportLanguage: typeof options["report-language"] === "string" ? options["report-language"] : "en",
+    maxRecommendations: readInteger(options["max-recommendations"], 5, { min: 0, max: 100 }),
+    metadata: {
+      name: requireOption(options, "name"),
+      description: requireOption(options, "description"),
+      whatsappRating: requireOption(options, "whatsapp-rating"),
+      whatsappReason: requireOption(options, "whatsapp-reason"),
+      tags: typeof options.tags === "string" ? options.tags.split(",") : [],
+    },
+  }));
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const { command, options } = parseCli(argv);
   if (command === "help" || command === "--help" || command === "-h") return print(HELP);
-  if (command === "doctor") return doctor();
+  if (command === "doctor") return doctor(options);
   if (command === "list-presets") return print(await listPresets());
   if (command === "validate-workflow") return validateCommand(options);
   if (command === "capture-page") return captureCommand(options);
@@ -243,6 +304,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === "reject") return rejectCommand(options);
   if (command === "status") return print(await statusAgentSession(sessionValue(options)));
   if (command === "finish") return finishCommand(options);
+  if (command === "import-image") return importImageCommand(options);
   if (command === "report") return reportCommand(options);
   throw new Error(`Unknown command: ${command}\n\n${HELP}`);
 }

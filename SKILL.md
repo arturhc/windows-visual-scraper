@@ -18,22 +18,23 @@ Resolve the skill directory from this file and invoke `scripts/image-scraper.mjs
 - Accept one or several Facebook/Instagram URLs, handles, account names, or a regular gallery URL.
 - If the user supplies an exact URL, use it. If they give a handle or name, resolve the canonical profile with available read-only web search or browser navigation. Never silently choose among materially ambiguous accounts; ask only when disambiguation is genuinely necessary.
 - Use the matching preset: `facebook-photos`, `instagram-photo-posts`, or `generic-lightbox-gallery`.
+- For an ordinary website, first determine visually whether it is a gallery. Use `generic-lightbox-gallery` only for a real gallery. For a non-gallery page, identify its principal still images and use `import-image` with the direct image URL or a local source file plus `--source-page`; do not manufacture an agent session or manifest by hand.
 - If quantity is omitted, use the preset default and stop cleanly when the visible collection ends. Never turn an open-ended phrase into unbounded scrolling.
 - Put all targets from one request under one collection root. Choose a short collection label from the task unless the user supplied one.
 - A direct request to start collecting from named targets authorizes the live UI actions needed for that task. Warn once that local execution takes focus and may move the pointer, then proceed without asking for click-by-click confirmation. Manual login, CAPTCHA, checkpoint, or account-security screens still require the user.
 
 ## Execute the job
 
-1. Run `doctor`, then dry-run each planned target. Do not open Edge if validation fails.
+1. Run `doctor --capture-test --confirm-live-ui` once, then dry-run each planned browser target. The capture test opens a harmless temporary Edge window, writes a real PNG, and closes it; do not start extraction if it fails.
 2. Process targets sequentially because they share one interactive desktop. Start each with `--collection`, `--target-label`, `--platform`, `--report-language` matching the user's language, a common `--output`, and `--confirm-live-ui`. Use `--pause-for-login` when authentication may be missing.
 3. Open the returned `screenshotPath` with the host's local image-viewing capability. In Codex, use the local image viewer. Never infer screen state from filenames, OCR logs, workflow defaults, or prior layouts.
-4. Follow each stage goal. Issue exactly one bounded `act`, inspect the returned screenshot, and repeat. Mark the stage `--done` only when its goal is visibly satisfied.
-5. In `collection` context, decide whether the principal visible media meets `inspectionPrompt`. Reject videos, reels, grids, browser chrome, loading states, duplicates, low-confidence frames, or irrelevant UI.
+4. Follow the active stage goal. Issue exactly one bounded `act`, inspect the returned screenshot, and repeat. Mark the stage `--done` only when its goal is visibly satisfied. A successful `--done` advances the saved session to the next stage and returns that next context; never continue sending the completed context.
+5. In `collection` context, decide whether the principal visible media meets `inspectionPrompt`. Reject videos, reels, grids, browser chrome, loading states, duplicates, low-confidence frames, or irrelevant UI. On Instagram, return to the grid after a rejected video and choose a tile without a play/Reels icon instead of cycling through a run of adjacent videos.
 6. For every accepted image, choose a tight crop that excludes browser chrome, comments, reactions, and navigation unless they are part of the requested evidence. Reinspect the saved image when crop quality is uncertain.
 7. Save with a concrete visible-content name, factual description, optional tags, a WhatsApp rating from 1 through 5, and a short reason. Never use generic names such as `image-001`, `photo`, or `screenshot`. Do not guess a person's identity or private context from appearance.
 8. Advance exactly one item according to the workflow, inspect the new frame, and continue until the requested count, end of collection, or a stopping condition.
 9. Call `finish` in a `finally`-style cleanup for every session. Include a concise per-target summary and use `partial` when useful images exist but the requested count was not reached.
-10. After all targets, run `report --root COLLECTION_ROOT`. Open `REPORT.md`, verify that every image link resolves, counts match manifests, descriptive filenames are present, and the WhatsApp shortlist is supported by visible evidence.
+10. After all targets, run `report --root COLLECTION_ROOT --max-recommendations N`, where `N` is the number the user requested (default 5). Open `REPORT.md`, verify that every image link resolves, logical source counts are not inflated by retries, descriptive filenames are present, and the WhatsApp shortlist is supported by visible evidence.
 
 If no local image-viewing capability is available, stop and explain the missing capability. Do not degrade into blind coordinate execution.
 
@@ -45,6 +46,7 @@ Return a structured collection containing source-specific session folders, descr
 - a Markdown summary table by account/source;
 - a Markdown image table containing every accepted image, preview, filename, visible-content description, and WhatsApp rating;
 - a ranked section of images that may work well in a WhatsApp conversation, with reasons;
+- no more than the requested number of WhatsApp recommendations, ranked by rating;
 - honest partial/failure notes and no unsupported claims.
 
 When finished, tell the user the collection folder, report path, captured/rejected counts, and top WhatsApp candidates. Link the local report and folder when the host supports local file links.

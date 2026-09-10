@@ -24,6 +24,8 @@ Pass one shared base directory with `--output` and one shared job label with `--
             └── ...
 ```
 
+Direct imports from non-gallery pages use the same `<platform>-<target>/<timestamp>/` layout with `manifest.json`, `run.ndjson`, `media/`, and `raw/`; they do not create a browser `session.json`.
+
 Use the same collection, output, and report-language values for every target in the user's request. The `collectionRoot` returned by `start` is the root to pass to `report`.
 
 ## Descriptive filenames
@@ -74,14 +76,16 @@ Favor images that:
 - are well cropped and do not include distracting browser UI;
 - are appropriate for the likely audience and do not expose private information.
 
-Penalize duplicates, clutter, tiny subjects, ambiguous context, low resolution, accidental frames, sensitive content, and screenshots dominated by interface elements. Give ratings independently; do not force a quota of recommendations.
+Penalize duplicates, clutter, tiny subjects, ambiguous context, low resolution, accidental frames, sensitive content, and screenshots dominated by interface elements. Give ratings independently. Use `--max-recommendations N` to cap the ranked shortlist at the user's requested number; the default cap is 5.
 
 ## Report verification
 
 `finish` regenerates the collection report, and `report --root PATH` rebuilds it after all sessions. Before delivery:
 
-1. Compare report totals with all `manifest.json` files.
+1. Compare report totals with the logical sources represented by all `manifest.json` files. Multiple attempts for the same platform and target count as one source, while the Attempts column preserves retry visibility.
 2. Confirm each Markdown preview and file link points to an existing image.
 3. Confirm every filename is descriptive and unique.
 4. Confirm each WhatsApp recommendation has a concrete visible reason.
 5. Add a short human-readable overview only if it improves the report; preserve the generated tables and relative links.
+
+Exact SHA-256 duplicates are rejected across the entire collection during save/import and suppressed again while reports are rebuilt.

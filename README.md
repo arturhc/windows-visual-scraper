@@ -50,7 +50,7 @@ The scripts are the deterministic control layer:
 - Open a separate Edge window using a selected profile.
 - Capture the visible window through native Windows APIs.
 - Execute one workflow-constrained action at a time.
-- Crop locally and reject exact duplicates with SHA-256.
+- Crop locally and reject exact duplicates across the full collection with SHA-256.
 - Store sessions, manifests, screenshots, traces, and accepted media.
 - Generate a consolidated `REPORT.md` with Markdown tables and image previews.
 
@@ -101,6 +101,8 @@ Users normally do not run these commands; Codex invokes them as part of the skil
 Preflight and start one target:
 
 ```powershell
+node scripts/image-scraper.mjs doctor --capture-test --confirm-live-ui
+
 node scripts/image-scraper.mjs start `
   --preset instagram-photo-posts `
   --url "https://www.instagram.com/example/" `
@@ -134,7 +136,7 @@ node scripts/image-scraper.mjs act `
   --click "0.20,0.74"
 ```
 
-Every action returns a new screenshot. After reaching the collection viewer, Codex saves accepted images with required editorial metadata:
+Every action returns a new screenshot. `act --done` advances the persisted active stage and returns the next context. After reaching the collection viewer, Codex saves accepted images with required editorial metadata:
 
 ```powershell
 node scripts/image-scraper.mjs save `
@@ -171,8 +173,11 @@ node scripts/image-scraper.mjs finish `
 node scripts/image-scraper.mjs report `
   --root "C:\path\to\campaign-references" `
   --title "Referencias de campaña" `
-  --language es
+  --language es `
+  --max-recommendations 5
 ```
+
+For a principal still image on a non-gallery website, `import-image` accepts a direct PNG, JPEG, or WebP URL (or a local file with its source-page URL), writes an auditable manifest, checks the hash against the complete collection, and rebuilds the report without creating a fake browser session.
 
 ## Output structure
 
@@ -200,13 +205,13 @@ All targets from one request share a collection folder:
 
 `REPORT.md` contains:
 
-- totals for processed sources, captured images, rejected frames, and recommendations;
+- totals for logical sources, captured images, rejected frames, and recommendations;
 - a source/status summary table;
 - a table containing every image preview, descriptive filename, description, and WhatsApp rating;
 - a ranked WhatsApp shortlist with a visible-content reason;
 - notes about partial sessions and responsible sharing.
 
-`manifest.json` remains the machine-readable source of truth. `run.ndjson` records screenshot and action events. Reports use relative links, so the complete collection folder can be moved as one unit.
+Retry attempts for the same platform and target are grouped as one logical source while remaining visible in the Attempts column. Exact duplicate hashes are suppressed across manifests. `manifest.json` remains the machine-readable source of truth. `run.ndjson` records screenshot and action events. Reports use relative links, so the complete collection folder can be moved as one unit.
 
 ## WhatsApp ratings
 
@@ -260,7 +265,7 @@ npm run validate:workflows
 npm run doctor
 ```
 
-Automated tests are offline and do not operate Edge. `doctor` checks the runtime without opening a browser window.
+Automated tests are offline and do not operate Edge. Plain `doctor` checks the runtime without opening a browser window; `doctor --capture-test --confirm-live-ui` additionally performs a real temporary Edge screenshot smoke test.
 
 See [CLI reference](references/cli.md), [deliverable conventions](references/deliverables.md), and [workflow schema](references/workflow-schema.md).
 

@@ -22,16 +22,17 @@
     },
     {
       "id": "open-first-post",
-      "goal": "Open the first real post tile in Instagram's modal viewer.",
-      "guidance": "Prefer the top-left fully visible tile in the regular post grid. Avoid profile controls, story circles, Reels tab controls, suggested accounts, and navigation. Return done only when a post modal is visibly open.",
-      "allowedActionTypes": ["click", "wait", "done"],
-      "allowedKeys": [],
-      "maxSteps": 6,
-      "forceFallbackAfterStep": 3,
+      "goal": "Open a clearly photographic still-image post in Instagram's modal viewer.",
+      "guidance": "Inspect the visible grid before clicking. Prefer a fully visible tile without a play, Reels, or video-camera icon. Avoid profile controls, story circles, Reels tabs, suggested accounts, and navigation. Use Page Down to scan deeper if all visible candidates are videos or unclear. Return done only when a post modal with a visibly still principal image is open.",
+      "allowedActionTypes": ["click", "key", "wait", "done"],
+      "allowedKeys": ["PGDN", "ESC"],
+      "maxSteps": 10,
+      "forceFallbackAfterStep": 6,
       "mustActBeforeDone": false,
       "settleMs": 800,
       "fallbackActions": [
-        { "type": "click", "xRatio": 0.20, "yRatio": 0.74, "waitMs": 1200 },
+        { "type": "key", "key": "ESC", "waitMs": 500 },
+        { "type": "key", "key": "PGDN", "waitMs": 900 },
         { "type": "wait", "waitMs": 900 },
         { "type": "done" }
       ]
@@ -45,9 +46,10 @@
     "crop": { "mode": "agent", "searchRightRatio": 0.72, "padding": 0 },
     "advance": {
       "mode": "agent",
-      "goal": "Advance to the next Instagram publication using the outer next-post arrow. Do not click an inner carousel arrow.",
-      "guidance": "The desired arrow sits outside the current modal content near the far-right edge. Return done when no next publication control exists.",
-      "maxSteps": 3,
+      "goal": "Reach the next distinct still-image Instagram publication.",
+      "guidance": "For an accepted still, the outer next-post arrow near the far-right edge may advance one publication; never use an inner carousel arrow by mistake. After rejecting a video or Reel, do not keep cycling through adjacent videos: press Escape to return to the grid, inspect for a tile without a play/Reels icon, use Page Down when needed, and click that still-photo candidate. Return done only when the visible collection has ended.",
+      "allowedKeys": ["ESC", "PGDN"],
+      "maxSteps": 8,
       "waitMs": 900
     }
   }

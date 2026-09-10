@@ -64,6 +64,8 @@ Read this reference when adding or adapting an agent-guided extraction workflow.
 
 - `key`: send the declared whitelisted key in `collection` context.
 - `click`: click the declared stable ratio in `collection` context.
-- `agent`: visually locate the next-item control with bounded `click`, `wait`, or `done` actions.
+- `agent`: visually locate the next item with bounded `click`, `wait`, or `done` actions. An optional `allowedKeys` array also enables selected safe keys such as `ESC` and `PGDN` for recovery back to a grid.
 
 For carousels, specify whether to advance an inner slide or the outer publication.
+
+Calling `act --done` on the active setup stage persists its completion and moves the session to the next stage. After the last setup stage, the active context becomes `collection`; earlier stage ids are then rejected as stale.

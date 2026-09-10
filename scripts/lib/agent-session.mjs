@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createRunArtifacts, sha256File, slugify } from "./artifacts.mjs";
+import { createRunArtifacts, findDuplicateSha256, sha256File, slugify } from "./artifacts.mjs";
 import { closeBrowserSession, openBrowserSession, sleep } from "./browser-session.mjs";
 import { generateReport } from "./report.mjs";
 import { SAFE_KEYS } from "./workflow-schema.mjs";
@@ -46,6 +46,40 @@ async function resolveSessionPath(value) {
   return stats.isDirectory() ? path.join(resolved, SESSION_FILE) : resolved;
 }
 
+function normalizeStageState(session) {
+  const stages = Array.isArray(session.workflow?.stages) ? session.workflow.stages : [];
+  let changed = false;
+  if (!Array.isArray(session.completedStages)) {
+    session.completedStages = [];
+    changed = true;
+  }
+  if (!Number.isInteger(session.currentStageIndex)) {
+    session.currentStageIndex = Math.min(stages.length, session.completedStages.length);
+    changed = true;
+  }
+  const normalizedIndex = Math.min(stages.length, Math.max(0, session.currentStageIndex));
+  if (normalizedIndex !== session.currentStageIndex) {
+    session.currentStageIndex = normalizedIndex;
+    changed = true;
+  }
+  return changed;
+}
+
+export function activeContextId(session) {
+  const stages = Array.isArray(session.workflow?.stages) ? session.workflow.stages : [];
+  return stages[session.currentStageIndex || 0]?.id || "collection";
+}
+
+export function completeWorkflowStage(session, context) {
+  const expected = activeContextId(session);
+  if (context !== expected || expected === "collection") {
+    throw new Error(`Cannot complete context "${context}"; the active context is "${expected}".`);
+  }
+  if (!session.completedStages.includes(context)) session.completedStages.push(context);
+  session.currentStageIndex += 1;
+  return activeContextId(session);
+}
+
 export async function loadAgentSession(value, { active = false } = {}) {
   const sessionPath = await resolveSessionPath(value);
   const session = JSON.parse(await fs.readFile(sessionPath, "utf8"));
@@ -56,6 +90,19 @@ export async function loadAgentSession(value, { active = false } = {}) {
   assertWithin(session.runRoot, sessionPath, "Session path");
   assertWithin(session.runRoot, session.manifestPath, "Manifest path");
   assertWithin(session.runRoot, session.tracePath, "Trace path");
+  let changed = normalizeStageState(session);
+  try {
+    const manifest = JSON.parse(await fs.readFile(session.manifestPath, "utf8"));
+    if (session.status === "active" && FINAL_STATUSES.has(manifest.status)) {
+      session.status = manifest.status;
+      session.finishedAt = manifest.finishedAt || session.finishedAt;
+      session.error = manifest.error || session.error;
+      changed = true;
+    }
+  } catch {
+    // The manifest is validated by the command that needs it.
+  }
+  if (changed) await saveSession(session);
   if (active && session.status !== "active") throw new Error(`Session is not active (status: ${session.status}).`);
   return session;
 }
@@ -128,17 +175,26 @@ export function normalizeSavedImageMetadata(metadata = {}) {
 }
 
 function contextDefinition(session, context) {
+  const expected = activeContextId(session);
+  if (context !== expected) {
+    throw new Error(`Context "${context}" is not active. Continue with "${expected}".`);
+  }
   if (context === "collection") {
     const advance = session.workflow.collection.advance;
+    const allowedKeys = advance.mode === "key"
+      ? [String(advance.key).toUpperCase()]
+      : (advance.allowedKeys || []).map((key) => String(key).toUpperCase());
     const allowedActionTypes = advance.mode === "key"
       ? ["key", "wait", "done"]
-      : ["click", "wait", "done"];
+      : advance.mode === "agent" && allowedKeys.length
+        ? ["click", "key", "wait", "done"]
+        : ["click", "wait", "done"];
     return {
       id: "collection",
       goal: advance.goal || "Advance to the next collection item.",
       guidance: advance.guidance || "Advance exactly one item.",
       allowedActionTypes,
-      allowedKeys: advance.mode === "key" ? [String(advance.key).toUpperCase()] : [],
+      allowedKeys,
       maxSteps: advance.maxSteps || 10,
       settleMs: advance.waitMs,
       fixedClick: advance.mode === "click"
@@ -195,7 +251,7 @@ async function captureShot(session, label, context) {
 
 function agentInstructions(session, context) {
   if (!context) {
-    return agentInstructions(session, session.workflow.stages[0].id);
+    return agentInstructions(session, activeContextId(session));
   }
   const definition = contextDefinition(session, context);
   const instructions = {
@@ -218,7 +274,7 @@ function agentInstructions(session, context) {
   return instructions;
 }
 
-export async function startAgentSession({ workflow, workflowPath, url, count, outputDir, options, collectionName, targetLabel, platform, reportLanguage }) {
+export async function startAgentSession({ workflow, workflowPath, url, count, outputDir, options, collectionName, targetLabel, platform, reportLanguage, maxRecommendations = 5 }) {
   const requestedCount = Math.min(count ?? workflow.collection.defaultCount, workflow.collection.maxCount);
   const resolvedCollectionName = String(collectionName || "image-collection").trim().slice(0, 120) || "image-collection";
   const resolvedTargetLabel = String(targetLabel || deriveTargetLabel(url)).trim().slice(0, 120) || deriveTargetLabel(url);
@@ -239,6 +295,7 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
   });
   const sessionPath = path.join(artifacts.directories.root, SESSION_FILE);
   let browserSession;
+  let session;
 
   try {
     browserSession = await openBrowserSession(url, {
@@ -246,7 +303,7 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       launchWaitMs: options.launchWaitMs ?? workflow.browser?.launchWaitMs ?? 4_000,
       fullscreen: options.fullscreen ?? workflow.browser?.fullscreen ?? true,
     });
-    const session = {
+    session = {
       schemaVersion: 1,
       kind: "agent-native",
       status: "active",
@@ -261,6 +318,7 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       targetLabel: resolvedTargetLabel,
       platform: resolvedPlatform,
       reportLanguage: resolvedReportLanguage,
+      maxRecommendations,
       runRoot: artifacts.directories.root,
       directories: artifacts.directories,
       manifestPath: artifacts.manifestPath,
@@ -272,6 +330,8 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       defaultWaitMs: options.waitMs ?? 1_200,
       counters: { shots: 0, actions: 0, saves: 0, rejections: 0 },
       contextActions: {},
+      currentStageIndex: 0,
+      completedStages: [],
     };
     await artifacts.log("browser-ready", { window: session.window });
     await saveSession(session);
@@ -285,9 +345,36 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
       instructions: agentInstructions(session),
     };
   } catch (error) {
-    await artifacts.log("start-error", { message: error.message, stack: error.stack });
-    await artifacts.writeManifest({ status: "failed", finishedAt: new Date().toISOString(), error: error.message });
-    await closeBrowserSession(browserSession, options, artifacts.log);
+    const finishedAt = new Date().toISOString();
+    const stateWarnings = [];
+    try {
+      await artifacts.log("start-error", { message: error.message, stack: error.stack });
+    } catch (stateError) {
+      stateWarnings.push(`trace: ${stateError.message}`);
+    }
+    try {
+      await artifacts.writeManifest({ status: "failed", finishedAt, error: error.message });
+    } catch (stateError) {
+      stateWarnings.push(`manifest: ${stateError.message}`);
+    }
+    if (session) {
+      session.status = "failed";
+      session.finishedAt = finishedAt;
+      session.error = error.message;
+      try {
+        await saveSession(session);
+      } catch (stateError) {
+        stateWarnings.push(`session: ${stateError.message}`);
+      }
+    }
+    await closeBrowserSession(browserSession, options, async (event, data) => {
+      try {
+        await artifacts.log(event, data);
+      } catch (stateError) {
+        stateWarnings.push(`cleanup trace: ${stateError.message}`);
+      }
+    });
+    if (stateWarnings.length) error.stateWarnings = stateWarnings;
     error.manifestPath = artifacts.manifestPath;
     throw error;
   }
@@ -295,9 +382,10 @@ export async function startAgentSession({ workflow, workflowPath, url, count, ou
 
 export async function shotAgentSession({ sessionValue, label = "frame", context }) {
   const session = await loadAgentSession(sessionValue, { active: true });
-  if (context) contextDefinition(session, context);
-  const screenshotPath = await captureShot(session, label, context);
-  return { status: session.status, sessionPath: session.sessionPath, screenshotPath, instructions: agentInstructions(session, context) };
+  const activeContext = context || activeContextId(session);
+  contextDefinition(session, activeContext);
+  const screenshotPath = await captureShot(session, label, activeContext);
+  return { status: session.status, sessionPath: session.sessionPath, screenshotPath, instructions: agentInstructions(session, activeContext) };
 }
 
 async function executeAction(session, action) {
@@ -329,15 +417,18 @@ export async function actAgentSession({ sessionValue, context, action }) {
   await executeAction(session, action);
   session.counters.actions += 1;
   session.contextActions[definition.id] = usedSteps + 1;
-  await appendTrace(session, "agent-action", { context, action });
+  const nextContext = action.type === "done" && context !== "collection"
+    ? completeWorkflowStage(session, context)
+    : context;
+  await appendTrace(session, "agent-action", { context, action, nextContext });
   await saveSession(session);
-  const screenshotPath = await captureShot(session, `${context}-after-action`, context);
+  const screenshotPath = await captureShot(session, `${context}-after-action`, nextContext);
   return {
     status: session.status,
     sessionPath: session.sessionPath,
     action,
     screenshotPath,
-    instructions: agentInstructions(session, context),
+    instructions: agentInstructions(session, nextContext),
   };
 }
 
@@ -383,12 +474,19 @@ export async function saveAgentFrame({ sessionValue, inputPath, method, cropBox,
     throw new Error(`The requested image count (${session.requestedCount}) has already been reached.`);
   }
   const hash = await sha256File(candidatePath);
-  if (manifest.items.some((item) => item.sha256 === hash)) {
+  const localDuplicate = manifest.items.find((item) => item.sha256 === hash);
+  const collectionDuplicate = localDuplicate
+    ? null
+    : await findDuplicateSha256(session.collectionRoot || session.runRoot, hash, { excludeManifestPath: session.manifestPath });
+  if (localDuplicate || collectionDuplicate) {
     await fs.rm(candidatePath, { force: true });
-    manifest.rejectedFrames.push({ input: portable(session.runRoot, sourcePath), reason: "duplicate", sha256: hash });
+    const duplicateOf = localDuplicate
+      ? localDuplicate.path
+      : `${portable(session.collectionRoot || session.runRoot, collectionDuplicate.manifestPath)}#${collectionDuplicate.item.path}`;
+    manifest.rejectedFrames.push({ input: portable(session.runRoot, sourcePath), reason: "duplicate", sha256: hash, duplicateOf });
     await writeManifest(session, manifest);
-    await appendTrace(session, "frame-rejected", { reason: "duplicate", sha256: hash });
-    return { status: "duplicate", sessionPath: session.sessionPath, sha256: hash };
+    await appendTrace(session, "frame-rejected", { reason: "duplicate", sha256: hash, duplicateOf });
+    return { status: "duplicate", sessionPath: session.sessionPath, sha256: hash, duplicateOf };
   }
 
   const index = manifest.items.length + 1;
@@ -463,13 +561,15 @@ export async function statusAgentSession(sessionValue) {
     rejected: manifest.rejectedFrames.length,
     requested: session.requestedCount,
     counters: session.counters,
+    activeContext: activeContextId(session),
+    completedStages: session.completedStages,
   };
 }
 
 export async function finishAgentSession({ sessionValue, status, reason, summary }) {
   const session = await loadAgentSession(sessionValue);
   if (session.status !== "active") {
-    const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage });
+    const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage, maxRecommendations: session.maxRecommendations ?? 5 });
     session.reportPath = report.reportPath;
     await saveSession(session);
     return statusAgentSession(session.sessionPath);
@@ -491,7 +591,7 @@ export async function finishAgentSession({ sessionValue, status, reason, summary
   if (reason) manifest.reason = reason;
   if (session.summary) manifest.summary = session.summary;
   await writeManifest(session, manifest);
-  const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage });
+  const report = await generateReport(session.collectionRoot || session.runRoot, { title: session.collectionName, language: session.reportLanguage, maxRecommendations: session.maxRecommendations ?? 5 });
   session.reportPath = report.reportPath;
   await saveSession(session);
   return { ...(await statusAgentSession(session.sessionPath)), report };

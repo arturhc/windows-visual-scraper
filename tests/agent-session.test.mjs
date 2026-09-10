@@ -5,12 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  activeContextId,
+  completeWorkflowStage,
   deriveTargetLabel,
   inferPlatform,
   normalizeSavedImageMetadata,
   parseCropBox,
   parseRatioPair,
   saveAgentFrame,
+  loadAgentSession,
   validateAgentAction,
 } from "../scripts/lib/agent-session.mjs";
 
@@ -42,6 +45,46 @@ test("agent actions are bounded by workflow context", () => {
   });
   assert.throws(() => validateAgentAction(context, { type: "key", key: "F11" }, 0), /not allowed/);
   assert.throws(() => validateAgentAction(context, { type: "done" }, 2), /step limit/);
+});
+
+test("done advances through workflow stages into collection context", () => {
+  const session = {
+    workflow: { stages: [{ id: "first" }, { id: "second" }] },
+    currentStageIndex: 0,
+    completedStages: [],
+  };
+  assert.equal(activeContextId(session), "first");
+  assert.equal(completeWorkflowStage(session, "first"), "second");
+  assert.equal(completeWorkflowStage(session, "second"), "collection");
+  assert.deepEqual(session.completedStages, ["first", "second"]);
+  assert.throws(() => completeWorkflowStage(session, "second"), /active context is "collection"/);
+});
+
+test("loading reconciles an active session with a failed manifest", async () => {
+  const runRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agent-reconcile-test-"));
+  try {
+    const sessionPath = path.join(runRoot, "session.json");
+    const manifestPath = path.join(runRoot, "manifest.json");
+    const tracePath = path.join(runRoot, "run.ndjson");
+    await fs.writeFile(manifestPath, JSON.stringify({ status: "failed", finishedAt: "2026-09-10T00:00:00.000Z", error: "capture failed", items: [], rejectedFrames: [] }));
+    await fs.writeFile(tracePath, "");
+    await fs.writeFile(sessionPath, JSON.stringify({
+      schemaVersion: 1,
+      kind: "agent-native",
+      status: "active",
+      runRoot,
+      manifestPath,
+      tracePath,
+      sessionPath,
+      workflow: { stages: [] },
+    }));
+    await assert.rejects(() => loadAgentSession(sessionPath, { active: true }), /status: failed/);
+    const repaired = JSON.parse(await fs.readFile(sessionPath, "utf8"));
+    assert.equal(repaired.status, "failed");
+    assert.equal(repaired.error, "capture failed");
+  } finally {
+    await fs.rm(runRoot, { recursive: true, force: true });
+  }
 });
 
 test("package has no AI SDK runtime dependency", async () => {
