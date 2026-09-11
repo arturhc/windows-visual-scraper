@@ -17,7 +17,9 @@ Use [the video JSON template](../assets/templates/video-analysis.json) as the de
 
 ## Acquisition boundaries
 
-`import-video` accepts a local authorized file or direct HTTP(S) media URL. It does not export Edge cookies, copy profiles, bypass DRM, or derive expiring hidden URLs. The visible Facebook/Instagram workflow may locate and assess candidate publications, but original-file acquisition proceeds only when an authorized local file or direct accessible media URL is available. Otherwise record a partial acquisition error and continue with other assets.
+`import-video` accepts a local authorized file or direct HTTP(S) media URL. If neither is available, `capture-video` can record a visibly playing, authorized video from a selected Windows screen region and then feed that local MP4 into the same pipeline. Screen recording requires live-UI acknowledgement, a bounded duration, and an explicit region or full-desktop choice. Region capture is preferred because it reduces interface, notifications, and unrelated private content. Audio is optional and requires the exact name of a Windows DirectShow capture device.
+
+Visible recording is a fidelity-limited fallback and must be described as `visible-screen-recording` in provenance. It is not an original download. Inspect the output for player controls, notifications, black/protected frames, dropped motion, and missing audio before deep analysis. The workflow does not export Edge cookies, copy profiles, bypass DRM, derive expiring hidden URLs, or use recording to defeat a protected black screen. If capture is not permitted or usable, record a partial acquisition error and continue with other assets.
 
 ## Scene and keyframe behavior
 
@@ -34,5 +36,6 @@ When audio exists and extraction is enabled, the pipeline writes mono 16 kHz `au
 ```powershell
 node scripts/image-scraper.mjs doctor-video
 node scripts/image-scraper.mjs import-video --root COLLECTION --input ".\reel.mp4" --source-page URL --platform instagram --source-account HANDLE --name "demostracion-producto-en-cocina" --config ".\content-config.json"
+node scripts/image-scraper.mjs capture-video --root COLLECTION --source-page URL --platform instagram --source-account HANDLE --name "demostracion-visible" --duration-seconds 45 --capture-box "320,180,1280,720" --confirm-live-ui
 node scripts/image-scraper.mjs analyze-video --root COLLECTION --video-root ".\assets\videos\demostracion-producto-en-cocina" --analysis-file ".\video-analysis.json"
 ```

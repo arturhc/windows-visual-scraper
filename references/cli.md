@@ -107,6 +107,29 @@ Choose exactly one of `--input LOCAL_VIDEO` or `--url DIRECT_VIDEO_URL`. Local f
 
 Useful per-run overrides include `--max-videos-per-source`, `--max-download-bytes`, `--hard-scene-threshold`, `--soft-scene-threshold`, `--meaningful-change-gap-seconds`, `--max-keyframes`, `--perceptual-hamming-threshold`, `--no-audio`, and `--transcribe`.
 
+### Visible Windows recording fallback
+
+When a public or otherwise authorized video is visible in Edge but no authorized original file or stable direct media URL is available, position the player and record only its screen region:
+
+```powershell
+node scripts/image-scraper.mjs capture-video `
+  --root "C:\path\collection" `
+  --source-page "https://example.com/video/123" `
+  --platform web `
+  --source-account "example" `
+  --name "demostración visible del producto" `
+  --duration-seconds 45 `
+  --capture-box "320,180,1280,720" `
+  --countdown-seconds 3 `
+  --confirm-live-ui `
+  --ffmpeg-path "C:\tools\ffmpeg.exe" `
+  --ffprobe-path "C:\tools\ffprobe.exe"
+```
+
+Run the same command with `--dry-run` first. Choose exactly one of `--capture-box LEFT,TOP,WIDTH,HEIGHT` or `--full-desktop`; the tight region is preferred. The cursor is omitted unless `--draw-mouse` is supplied. Add `--audio-device "Exact DirectShow device name"` only when an authorized Windows audio capture device is configured. Duration is capped at two hours, countdown at 30 seconds, framerate at 60 FPS, and output size by `video.maxDownloadBytes`. The resulting metadata identifies the acquisition method as `visible-screen-recording`; it must not be described as an original download.
+
+This command records what is visibly rendered. It does not extract cookies or stream URLs and must not be used to bypass DRM, checkpoints, permissions, or a protected black screen. Inspect the retained recording for interface, notifications, private content, missing audio, and playback quality.
+
 Apply deep video and per-scene keyframe analysis later:
 
 ```powershell

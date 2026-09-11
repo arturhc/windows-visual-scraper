@@ -100,6 +100,19 @@ async function appendCollectionError(root, errorRecord) {
   return errorPath;
 }
 
+export async function recordVideoAcquisitionError({ rootValue, name, source, error, stage = "video-acquisition", retryable = true }) {
+  const root = path.resolve(rootValue);
+  await fs.mkdir(root, { recursive: true });
+  const errorPath = await appendCollectionError(root, {
+    asset: name || null,
+    stage,
+    error: error instanceof Error ? error.message : String(error),
+    source: source || null,
+    retryable,
+  });
+  return { errorPath, reports: await buildKnowledgeReports(root) };
+}
+
 async function uniqueVideoRoot(videosRoot, slug) {
   for (let suffix = 1; suffix < 1000; suffix += 1) {
     const name = suffix === 1 ? slug : `${slug}-${String(suffix).padStart(2, "0")}`;
@@ -141,6 +154,8 @@ export async function importAndProcessVideo({
   ffmpegPath,
   ffprobePath,
   whisperPath,
+  acquisitionMethod,
+  acquisitionDetails,
 }) {
   const root = path.resolve(rootValue);
   await fs.mkdir(root, { recursive: true });
@@ -192,7 +207,11 @@ export async function importAndProcessVideo({
       capturedAt: new Date().toISOString(),
       contentHash,
       source,
-      acquisition: { method: inputPath ? "local-file" : "direct-video", originalSource: acquired.source },
+      acquisition: {
+        method: acquisitionMethod || (inputPath ? "local-file" : "direct-video"),
+        originalSource: acquisitionMethod ? (sourcePage || videoUrl || acquired.source) : acquired.source,
+        ...(acquisitionDetails ? { details: acquisitionDetails } : {}),
+      },
       config: config.video,
       media: null,
       scenes: [],

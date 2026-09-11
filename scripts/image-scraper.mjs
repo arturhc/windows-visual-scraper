@@ -37,7 +37,8 @@ import { capturePage } from "./lib/runner.mjs";
 import { helperPath, windowsBrowser } from "./lib/windows-bridge.mjs";
 import { listPresets, loadWorkflow, validateWorkflow } from "./lib/workflow-schema.mjs";
 import { listSourceAdapters } from "./lib/source-adapters.mjs";
-import { analyzeVideoAsset, importAndProcessVideo } from "./lib/video-pipeline.mjs";
+import { parsePixelCaptureBox, recordWindowsScreen } from "./lib/screen-recorder.mjs";
+import { analyzeVideoAsset, importAndProcessVideo, recordVideoAcquisitionError } from "./lib/video-pipeline.mjs";
 
 const HELP = `Windows Visual Image Scraper
 
@@ -64,6 +65,7 @@ Commands:
   analyze-image --root PATH --image PATH --analysis-file JSON
   backfill --root PATH [--force]
   import-video --root PATH (--input VIDEO | --url VIDEO_URL) --source-page URL --name TEXT [--config PATH] [--analysis-file JSON] [--ffmpeg-path PATH] [--ffprobe-path PATH]
+  capture-video --root PATH --source-page URL --name TEXT --duration-seconds N (--capture-box LEFT,TOP,WIDTH,HEIGHT | --full-desktop) [--audio-device NAME] [--dry-run | --confirm-live-ui]
   analyze-video --root PATH --video-root PATH --analysis-file JSON
   index --root PATH
   report --root PATH [--title TEXT] [--language en|es] [--max-recommendations N]
@@ -392,6 +394,90 @@ async function importVideoCommand(options) {
   }));
 }
 
+async function captureVideoCommand(options) {
+  const sourcePage = assertHttpUrl(requireOption(options, "source-page"));
+  const captureBox = typeof options["capture-box"] === "string" ? parsePixelCaptureBox(options["capture-box"]) : undefined;
+  const fullDesktop = readBoolean(options["full-desktop"]);
+  if ((captureBox ? 1 : 0) + (fullDesktop ? 1 : 0) !== 1) {
+    throw new Error("Choose exactly one screen capture area: --capture-box or --full-desktop.");
+  }
+  const durationSeconds = readNumber(requireOption(options, "duration-seconds"), 0, { min: 1, max: 7200 });
+  const frameRate = readInteger(options.framerate, 30, { min: 1, max: 60 });
+  const countdownSeconds = readInteger(options["countdown-seconds"], 3, { min: 0, max: 30 });
+  const configFile = typeof options.config === "string" ? options.config : undefined;
+  const override = {
+    media: { videos: true },
+    video: {
+      enabled: true,
+      ...(options["max-videos-per-source"] != null ? { maxVideosPerSource: readInteger(options["max-videos-per-source"], 10, { min: 1, max: 100 }) } : {}),
+      ...(options["max-download-bytes"] != null ? { maxDownloadBytes: readInteger(options["max-download-bytes"], 1073741824, { min: 1048576, max: 10737418240 }) } : {}),
+    },
+  };
+  const config = await loadContentConfig(configFile, override);
+  const plan = {
+    command: "capture-video",
+    sourcePage,
+    name: requireOption(options, "name"),
+    durationSeconds,
+    frameRate,
+    countdownSeconds,
+    captureArea: captureBox ? { mode: "region", ...captureBox } : { mode: "full-desktop" },
+    drawMouse: readBoolean(options["draw-mouse"]),
+    audioDevice: typeof options["audio-device"] === "string" ? options["audio-device"] : null,
+    maxBytes: config.video.maxDownloadBytes,
+  };
+  if (readBoolean(options["dry-run"])) return print({ dryRun: true, plan });
+  assertLiveUiAuthorized(options);
+  assertWindows();
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "visual-video-capture-"));
+  const recordingPath = path.join(temporaryRoot, "capture.mp4");
+  try {
+    let capture;
+    try {
+      capture = await recordWindowsScreen({
+        outputPath: recordingPath,
+        ffmpegPath: typeof options["ffmpeg-path"] === "string" ? options["ffmpeg-path"] : "ffmpeg",
+        durationSeconds,
+        frameRate,
+        captureBox,
+        fullDesktop,
+        drawMouse: plan.drawMouse,
+        audioDevice: plan.audioDevice || undefined,
+        countdownSeconds,
+        maxBytes: config.video.maxDownloadBytes,
+      });
+    } catch (error) {
+      await recordVideoAcquisitionError({
+        rootValue: requireOption(options, "root"),
+        name: plan.name,
+        source: sourcePage,
+        error,
+        stage: "visible-screen-recording",
+      });
+      throw error;
+    }
+    const captureDetails = { ...capture };
+    delete captureDetails.outputPath;
+    print(await importAndProcessVideo({
+      rootValue: requireOption(options, "root"),
+      inputPath: recordingPath,
+      sourcePage,
+      sourcePlatform: typeof options.platform === "string" ? options.platform : undefined,
+      sourceAccount: typeof options["source-account"] === "string" ? options["source-account"] : undefined,
+      name: plan.name,
+      config,
+      analysis: await readJsonFile(typeof options["analysis-file"] === "string" ? options["analysis-file"] : undefined, "Video analysis file"),
+      ffmpegPath: typeof options["ffmpeg-path"] === "string" ? options["ffmpeg-path"] : undefined,
+      ffprobePath: typeof options["ffprobe-path"] === "string" ? options["ffprobe-path"] : undefined,
+      whisperPath: typeof options["whisper-path"] === "string" ? options["whisper-path"] : undefined,
+      acquisitionMethod: "visible-screen-recording",
+      acquisitionDetails: captureDetails,
+    }));
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 async function analyzeVideoCommand(options) {
   print(await analyzeVideoAsset({
     rootValue: requireOption(options, "root"),
@@ -422,6 +508,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === "analyze-image") return analyzeImageCommand(options);
   if (command === "backfill") return backfillCommand(options);
   if (command === "import-video") return importVideoCommand(options);
+  if (command === "capture-video") return captureVideoCommand(options);
   if (command === "analyze-video") return analyzeVideoCommand(options);
   if (command === "index") return print(await buildKnowledgeReports(requireOption(options, "root")));
   if (command === "report") return reportCommand(options);

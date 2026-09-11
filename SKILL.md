@@ -38,7 +38,11 @@ For each image, read [image-analysis-contract.md](references/image-analysis-cont
 
 Read [video-analysis-contract.md](references/video-analysis-contract.md). Run `doctor-video` before enabling video. FFmpeg and FFprobe are required; Whisper is optional.
 
-Use visible Edge navigation to identify candidate video pages and source adapters to normalize their platform/provenance while keeping acquisition separate from analysis. `import-video` accepts an authorized local file or a direct accessible HTTP(S) media URL. Do not export Edge cookies, copy browser profiles, retain secrets, derive hidden expiring URLs, bypass DRM, or defeat platform controls. If the original cannot be obtained within those boundaries, record a partial error and continue other assets.
+Use visible Edge navigation to identify candidate video pages and source adapters to normalize their platform/provenance while keeping acquisition separate from analysis. Prefer an authorized local file or a direct accessible HTTP(S) media URL through `import-video`.
+
+When no authorized original is directly available, `capture-video` may record the visibly playing video from Windows. This is a fallback capture, not reverse engineering: position the public or otherwise authorized player in Edge, prefer a tight `--capture-box`, hide the pointer, use an explicit duration, and request an audio device only when system audio capture is available. Warn that recording takes focus and may include notifications or private screen content; inspect the result before retaining it. Do not use visible recording to defeat DRM or a protected black screen.
+
+Do not export Edge cookies, copy browser profiles, retain secrets, derive hidden expiring URLs, bypass DRM, or defeat platform controls. If neither direct import nor visible recording succeeds within those boundaries, record a partial error and continue other assets.
 
 The video pipeline must:
 

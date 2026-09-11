@@ -119,7 +119,7 @@ Without `--analysis-file`, a structurally complete `basic` twin is created immed
 
 ## Video workflow
 
-`import-video` accepts an authorized local file or a direct accessible media URL. It does not export browser cookies, copy Edge profiles, bypass DRM, or break access controls.
+`import-video` accepts an authorized local file or a direct accessible media URL. When neither is available, `capture-video` can record an explicitly selected, visibly playing Windows screen region and pass that MP4 through the same analysis pipeline. It does not export browser cookies, copy Edge profiles, bypass DRM, or break access controls.
 
 ```powershell
 node scripts/image-scraper.mjs import-video `
@@ -131,6 +131,20 @@ node scripts/image-scraper.mjs import-video `
   --name "demostracion-producto-en-cocina" `
   --config ".\content-config.json"
 ```
+
+Visible fallback example:
+
+```powershell
+node scripts/image-scraper.mjs capture-video `
+  --root ".\collections\brand-references" `
+  --source-page "https://example.com/video/123" `
+  --name "demostración visible del producto" `
+  --duration-seconds 45 `
+  --capture-box "320,180,1280,720" `
+  --confirm-live-ui
+```
+
+Prefer a tight player region. Audio is optional through `--audio-device`; screen recordings are labeled as such in provenance and are never represented as original downloads.
 
 The cheap deterministic pass probes media, detects scene/visual boundaries, removes redundant candidates, extracts representative frames, and creates baseline twins. The host then inspects the compact evidence set and supplies the multimodal synthesis:
 

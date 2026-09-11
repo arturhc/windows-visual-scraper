@@ -12,7 +12,8 @@ source resolution
   -> content-manifest.json
   -> reports/*.md
 
-video import
+video import or visible Windows recording
+  -> authorized local/direct media OR FFmpeg gdigrab player-region capture
   -> FFprobe metadata
   -> FFmpeg hard-cut + meaningful-change selection
   -> structural/color perceptual deduplication
@@ -32,6 +33,7 @@ video import
 - `knowledge-assets.mjs`: mandatory image-to-twin-Markdown conversion.
 - `backfill.mjs`: idempotent generation of missing twins and later deep-analysis replacement.
 - `media-tools.mjs`: FFmpeg/FFprobe diagnostics, probing, scene candidates, audio extraction, and perceptual fingerprints.
+- `screen-recorder.mjs`: bounded Windows `gdigrab` recording of an explicitly selected visible player region, with optional authorized DirectShow audio input.
 - `video-pipeline.mjs`: resumable video import, source limits, scene hierarchy, keyframes, and analysis documents.
 - `content-manifest.mjs`: one machine-readable inventory and human indexes across legacy and new assets.
 - `report.mjs`: legacy-compatible gallery report plus automatic content-intelligence report regeneration.
