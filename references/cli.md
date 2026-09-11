@@ -15,7 +15,17 @@ node scripts/image-scraper.mjs list-presets
 node scripts/image-scraper.mjs validate-workflow --all
 ```
 
-Images are enabled by default. Video processing is opt-in through `media.videos`, `video.enabled`, or the `import-video` command. FFmpeg and FFprobe are optional for image-only runs; Whisper is optional even for video and is only required when transcription is requested.
+Images are enabled by default. Video processing is opt-in through `media.videos`, `video.enabled`, or an explicit video command. FFmpeg and FFprobe are not needed for image-only runs; Whisper is optional even for video and is only required when transcription is requested.
+
+## Execution modes
+
+The content configuration tells the host agent which command families to invoke; it is not a command that automatically runs every enabled pipeline.
+
+- `images-only`: run image diagnostics and the browser or direct-image commands. Do not run `doctor-video`, identify video candidates, call video commands, extract frames/audio, or analyze video.
+- `videos-only`: run `doctor-video` and the video import/capture/analysis commands. Do not start image browser sessions, import stills, backfill image twins, or analyze images.
+- `images-and-videos`: run both command families and consolidate them with `index` and `report`.
+
+Generate reports after the enabled pipelines finish. A disabled media type may have an empty generated index and requires no acquisition or analysis coverage.
 
 ## Browser acquisition session
 

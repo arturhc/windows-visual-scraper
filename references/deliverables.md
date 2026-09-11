@@ -66,11 +66,13 @@ Favor clear subjects, readable moments at phone-preview size, useful emotion or 
 
 ## Final verification
 
-1. Confirm every curated image and retained keyframe has its Markdown twin.
+Apply media-specific checks only to enabled media. A disabled media type may have an empty generated index and zero assets without making the run partial or incomplete.
+
+1. Confirm every curated image and retained keyframe for enabled media has its Markdown twin.
 2. Confirm originals, analyses, manifests, and report links exist.
 3. Compare logical source totals with source manifests; retries remain auditable without inflating source counts.
-4. Confirm SHA-256 duplicate suppression and visual keyframe deduplication behaved as expected.
-5. Confirm `content-manifest.json` relationships resolve from video to scene to keyframe.
-6. Confirm partial failures appear in video metadata or `content-errors.ndjson` and in the run report.
+4. Confirm SHA-256 duplicate suppression and, when video is enabled, visual keyframe deduplication behaved as expected.
+5. When video is enabled, confirm `content-manifest.json` relationships resolve from video to scene to keyframe.
+6. Confirm partial failures for enabled pipelines appear in asset metadata or `content-errors.ndjson` and in the run report.
 7. Confirm analysis coverage distinguishes `basic` from `analyzed` assets.
 8. Confirm no credentials, cookies, profile data, browser UI, or access-control workarounds were collected.

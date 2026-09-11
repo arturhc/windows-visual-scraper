@@ -19,9 +19,25 @@ The compatibility identifier remains `windows-visual-image-scraper`; do not rena
 
 Determine website, Facebook, Instagram, and other relevant sources. Do not ask again for URLs the user already supplied. When sources are missing, ask only for the missing information or offer to research official accounts. Never silently select among materially ambiguous brands.
 
-Images are enabled by default. If media scope was not specified, ask whether the user wants images only or images plus video. Video is opt-in and defaults to at most 10 videos per source. A fully specified request or config must run non-interactively. Read [configuration.md](references/configuration.md) when creating or consuming a job config.
+Select exactly one media mode from the request or configuration:
+
+- `images-only`: `media.images: true`, `media.videos: false`, and `video.enabled: false`;
+- `videos-only`: `media.images: false` and `media.videos: true`;
+- `images-and-videos`: both media flags are `true`.
+
+Honor phrases such as "images only", "only run the image scraper", "videos only", or "both" without asking again. If the user does not specify a media mode, default to `images-only`; video remains opt-in and defaults to at most 10 videos per source. A fully specified request or config must run non-interactively. Read [configuration.md](references/configuration.md) when creating or consuming a job config.
+
+Treat the selected mode as an execution boundary, not merely a reporting preference:
+
+- In `images-only`, do not identify video candidates or run video discovery, `doctor-video`, FFmpeg/FFprobe, video import/capture, scene or keyframe extraction, audio/transcription, video analysis, or the video analysis contract.
+- In `videos-only`, do not run image browser workflows, still-image imports, image analysis, image backfill, or the image analysis contract.
+- In `images-and-videos`, run both enabled pipelines while deduplicating and reporting through the shared collection.
+
+Load media-specific references and inspect assets only for enabled media. Do not spend context or analysis tokens preparing work for a disabled media type.
 
 ## Acquire images
+
+Run this section only when `media.images` is `true`.
 
 Before live UI work, read [cli.md](references/cli.md) and [deliverables.md](references/deliverables.md).
 
@@ -35,6 +51,8 @@ Before live UI work, read [cli.md](references/cli.md) and [deliverables.md](refe
 For each image, read [image-analysis-contract.md](references/image-analysis-contract.md). Analyze visible content, purpose, intent, composition, lighting, apparent camera treatment, art direction, graphics, color, effectiveness, reusable principles, nonessential details, conceptual recreation, and original-generation prompts. Separate observed, inferred, and unknown facts. Never invent identities, equipment, focal lengths, fonts, LUTs, or software.
 
 ## Acquire and process video
+
+Run this section only when video is enabled by the selected media mode.
 
 Read [video-analysis-contract.md](references/video-analysis-contract.md). Run `doctor-video` before enabling video. FFmpeg and FFprobe are required; Whisper is optional.
 
@@ -61,7 +79,7 @@ After inspecting the representative frames and available audio/transcript, use `
 
 ## Backfill and resume
 
-Run `backfill --root COLLECTION` on legacy collections. It scans source manifests, creates missing image twins, adds dimensions and analysis state, and rebuilds indexes without scraping again. It skips existing analyzed assets unless `--force` is explicitly used. Deepen `basic` assets with `analyze-image` or `analyze-video`.
+When images are enabled, run `backfill --root COLLECTION` on legacy collections. It scans source manifests, creates missing image twins, adds dimensions and analysis state, and rebuilds indexes without scraping again. It skips existing analyzed assets unless `--force` is explicitly used. Deepen `basic` assets with `analyze-image` or `analyze-video` only for enabled media.
 
 Exact hashes prevent duplicate storage across the collection. Video imports resume by hash. Preserve partial manifests, errors, valid media, and completed analysis across reruns.
 
@@ -69,14 +87,14 @@ Exact hashes prevent duplicate storage across the collection. Video imports resu
 
 Run `report --root COLLECTION` for the legacy visual gallery and `index --root COLLECTION` for the unified inventory. Verify:
 
-- every retained image/keyframe has a same-basename `.md`;
+- every retained asset for an enabled media type has its required Markdown twin;
 - `content-manifest.json` contains source, type, paths, hashes, analysis state, parents, scenes, timestamps, duplicates, and structured errors;
 - `reports/images-index.md`, `videos-index.md`, and `run-report.md` link to real files;
 - coverage distinguishes `basic` from `analyzed` rather than overstating completion;
 - errors contain asset, stage, source, retryability, and cause;
 - generation guidance extracts abstract creative principles and never requests literal copying.
 
-Do not stop after downloading. Continue through organization, analysis, manifests, and reporting for every enabled media type.
+An empty index for a disabled media type is valid and is not incomplete coverage. Do not stop after downloading. Continue through organization, analysis, manifests, and reporting for every enabled media type only.
 
 ## Safety and quality boundaries
 

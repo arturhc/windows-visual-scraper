@@ -2,6 +2,8 @@
 
 The skill keeps the existing Edge-based visual acquisition protocol and adds a platform-neutral content-intelligence layer. Acquisition and understanding are deliberately separate.
 
+Media-scope routing gates the two acquisition pipelines before any media-specific diagnostics, discovery, reference loading, or analysis. The supported modes are `images-only`, `videos-only`, and `images-and-videos`; `images-only` is the default. Disabled pipelines must not consume tools or analysis context, while both pipelines continue to share the manifest and report layer when enabled together.
+
 ```text
 source resolution
   -> source adapter
