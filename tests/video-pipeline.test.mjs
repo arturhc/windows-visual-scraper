@@ -60,9 +60,13 @@ test("video pipeline probes media, detects visual segments, writes keyframe twin
       config,
       ffmpegPath,
       ffprobePath,
+      acquisitionMethod: "visible-screen-recording",
+      acquisitionDetails: { captureArea: { mode: "region", left: 0, top: 0, width: 160, height: 90 } },
     });
     assert.equal(first.status, "complete");
     assert.equal(first.metadata.media.width, 160);
+    assert.equal(first.metadata.source.url, "https://example.com/videos");
+    assert.equal(first.metadata.acquisition.method, "visible-screen-recording");
     assert.ok(first.metadata.scenes.length >= 2);
     await fs.access(path.join(first.videoRoot, "video.md"));
     await fs.access(path.join(first.videoRoot, "scenes", "scene-001", "keyframe-001.md"));

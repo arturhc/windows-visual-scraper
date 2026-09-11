@@ -182,7 +182,7 @@ export async function importAndProcessVideo({
     }
     const source = {
       platform: adapter.platform,
-      url: videoUrl || acquired.source,
+      url: videoUrl || (acquisitionMethod ? sourcePage : acquired.source),
       page: sourcePage || videoUrl || null,
       account: sourceAccount || null,
       adapter: adapter.id,
